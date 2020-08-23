@@ -21,19 +21,28 @@ public class KafkaConfigModel {
 
 	public KafkaConfigModel() {
 		List<ConfigKey> configKeys = new ArrayList<>();
-		for (Map.Entry<String, ConfigKey> configKey : AdminClientConfig.configDef().configKeys().entrySet()) {
-			configKeys.add(configKey.getValue());
-			if (configKey.getValue() != null && configKey.getValue().defaultValue != null) {
-				switch (configKey.getValue().type) {
+		for (Map.Entry<String, ConfigKey> configKeyEntry : AdminClientConfig.configDef().configKeys().entrySet()) {
+			String key = configKeyEntry.getKey();
+			ConfigKey configKey = configKeyEntry.getValue();
+			configKeys.add(configKey);
+			if (configKey != null && configKey.defaultValue != null) {
+				switch (configKey.type) {
 					case LIST:
 						List<String> values = new ArrayList<>();
-						configKey.getValue().defaultValue.toString();
-						listsModel.put(configKey.getKey(), values);
+						if (configKey.defaultValue instanceof List) {
+							((List<?>) configKey.defaultValue).stream().map(Object::toString).map(Object::toString).forEach(values::add);
+						}
+						listsModel.put(key, values);
 					break;
 					default:
-						model.put(configKey.getKey(), configKey.getValue().defaultValue.toString());
+						model.put(key, configKey.defaultValue.toString());
 					break;
 				}
+			}
+			if (key.equals("client.id")) {
+				model.put(key, "mvmn_kafkaclient_gui");
+			} else if (key.equals("bootstrap.servers") && listsModel.get(key).isEmpty()) {
+				listsModel.get(key).add("127.0.0.1:9092");
 			}
 		}
 		this.configKeys = Collections.unmodifiableList(configKeys);
