@@ -135,7 +135,8 @@ public class KafkaConfigPanel extends JPanel {
 			result.setProperty(configKeysByName.get(svp.getKey()), value.trim().isEmpty() ? null : value.trim());
 		}
 		for (Map.Entry<String, List<JTextField>> mvp : multiValProps.entrySet()) {
-			List<String> values = mvp.getValue().stream().map(JTextField::getText).collect(Collectors.toList());
+			List<String> values = mvp.getValue().stream().map(JTextField::getText).filter(v -> v != null && !v.trim().isEmpty())
+					.collect(Collectors.toList());
 			result.setListProperty(configKeysByName.get(mvp.getKey()), values);
 		}
 
