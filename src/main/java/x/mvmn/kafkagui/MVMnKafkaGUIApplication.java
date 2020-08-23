@@ -13,12 +13,6 @@ import x.mvmn.kafkagui.gui.KafkaConfigPanel;
 public class MVMnKafkaGUIApplication {
 
 	public static void main(String args[]) {
-		// for (Map.Entry<String, ConfigKey> configKeys : AdminClientConfig.configDef().configKeys().entrySet()) {
-		// ConfigKey ck = configKeys.getValue();
-		// System.out.println(configKeys.getKey() + ": " + ck.group + " [" + ck.type() + "] (" + ck.importance + ") " + ck.name + " / "
-		// + ck.displayName + " - " + ck.defaultValue);
-		// }
-
 		KafkaConfigPanel kcp = new KafkaConfigPanel();
 		JButton connect = new JButton("Connect");
 		connect.addActionListener(e -> {

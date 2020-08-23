@@ -1,9 +1,7 @@
 package x.mvmn.kafkagui.gui;
 
-import java.awt.Component;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
-import java.awt.GridLayout;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -11,8 +9,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import javax.swing.BorderFactory;
 import javax.swing.JButton;
-import javax.swing.JLabel;
+import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JTextField;
@@ -45,7 +44,7 @@ public class KafkaConfigPanel extends JPanel {
 
 			configKeysByName.put(key, configKey);
 
-			Component component;
+			JComponent component;
 			if (configKey.type.equals(ConfigDef.Type.LIST)) {
 				List<String> values = model.getListPropety(configKey);
 				List<JTextField> inputs = new ArrayList<>();
@@ -69,13 +68,16 @@ public class KafkaConfigPanel extends JPanel {
 				singeValProps.put(key, txf);
 			}
 			gbc.gridy = i;
-			gbc.gridx = 0;
-			gbc.weightx = 0;
-			gbc.fill = GridBagConstraints.HORIZONTAL;
-			this.add(new JLabel(key), gbc);
+			// gbc.gridx = 0;
+			// gbc.weightx = 0.0;
+			// gbc.fill = GridBagConstraints.BOTH;
+			// JLabel label = new JLabel(key, JLabel.RIGHT);
+			// label.setVerticalAlignment(JLabel.TOP);
+			// this.add(label, gbc);
+			component.setBorder(BorderFactory.createTitledBorder(key));
 			gbc.fill = GridBagConstraints.HORIZONTAL;
 			gbc.weightx = 1.0;
-			gbc.gridx = 1;
+			gbc.gridx = 0;
 			this.add(component, gbc);
 		}
 
@@ -86,7 +88,7 @@ public class KafkaConfigPanel extends JPanel {
 		List<JTextField> panelInputs = multiValProps.get(key);
 		JPanel panel = multiValPropPanels.get(key);
 		panel.removeAll();
-		panel.setLayout(new GridLayout(panelInputs.size() + 1, 2));
+		panel.setLayout(new GridBagLayout());
 		JButton addBtn = new JButton("Add");
 		addBtn.addActionListener(e -> {
 			multiValProps.get(key).add(new JTextField());
@@ -95,13 +97,19 @@ public class KafkaConfigPanel extends JPanel {
 			panel.revalidate();
 			panel.repaint();
 		});
-		panel.add(addBtn);
-		panel.add(new JLabel());
-		for (JTextField input : panelInputs) {
+		GridBagConstraints gbc = new GridBagConstraints();
+		gbc.fill = GridBagConstraints.HORIZONTAL;
+		for (int i = 0; i < panelInputs.size(); i++) {
+			JTextField input = panelInputs.get(i);
 			final JTextField currentInput = input;
-			panel.add(input);
+			gbc.gridy = i;
+			gbc.gridx = 0;
+			gbc.weightx = 1.0;
+			panel.add(input, gbc);
 			JButton deleteBtn = new JButton("x");
-			panel.add(deleteBtn);
+			gbc.weightx = 0.0;
+			gbc.gridx = 1;
+			panel.add(deleteBtn, gbc);
 			deleteBtn.addActionListener(e -> {
 				multiValProps.get(key).remove(currentInput);
 				repopulatePanel(key);
@@ -110,6 +118,12 @@ public class KafkaConfigPanel extends JPanel {
 				panel.repaint();
 			});
 		}
+		gbc.fill = GridBagConstraints.HORIZONTAL;
+		gbc.weightx = 1.0;
+		gbc.gridy = panelInputs.size();
+		gbc.gridx = 0;
+		gbc.gridwidth = 2;
+		panel.add(addBtn, gbc);
 	}
 
 	public KafkaConfigModel getCurrentState() {
