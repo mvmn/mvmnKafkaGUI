@@ -3,10 +3,14 @@ package x.mvmn.kafkagui;
 import java.awt.BorderLayout;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Properties;
 
 import javax.swing.JButton;
 import javax.swing.JFrame;
 import javax.swing.JScrollPane;
+
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.KafkaAdminClient;
 
 import x.mvmn.kafkagui.gui.KafkaConfigPanel;
 
@@ -18,8 +22,12 @@ public class MVMnKafkaGUIApplication {
 		connect.addActionListener(e -> {
 			try {
 				ByteArrayOutputStream baos = new ByteArrayOutputStream();
-				kcp.getCurrentState().modelToProperties().store(baos, "");
+				Properties props = kcp.getCurrentState().modelToProperties();
+				props.store(baos, "");
 				System.out.println(new String(baos.toByteArray(), StandardCharsets.UTF_8));
+				try (AdminClient ac = KafkaAdminClient.create(props)) {
+					ac.listTopics().names().get().stream().forEach(System.out::println);
+				}
 			} catch (Exception ex) {
 				ex.printStackTrace();
 			}
@@ -32,5 +40,6 @@ public class MVMnKafkaGUIApplication {
 		frame.add(connect, BorderLayout.SOUTH);
 		frame.pack();
 		frame.setVisible(true);
+
 	}
 }
