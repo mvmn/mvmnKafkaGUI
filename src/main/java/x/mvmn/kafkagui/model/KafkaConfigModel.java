@@ -1,4 +1,4 @@
-package x.mvmn.kafkagui.gui;
+package x.mvmn.kafkagui.model;
 
 import java.util.ArrayList;
 import java.util.Arrays;

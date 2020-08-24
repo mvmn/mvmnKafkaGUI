@@ -7,6 +7,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 import javax.swing.BorderFactory;
@@ -15,9 +16,13 @@ import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JTextField;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigDef.ConfigKey;
+
+import x.mvmn.kafkagui.model.KafkaConfigModel;
 
 public class KafkaConfigPanel extends JPanel {
 	private static final long serialVersionUID = 5540440699197585775L;
@@ -26,6 +31,25 @@ public class KafkaConfigPanel extends JPanel {
 	private final Map<String, List<JTextField>> multiValProps = Collections.synchronizedMap(new HashMap<>());
 	private final Map<String, JPanel> multiValPropPanels = Collections.synchronizedMap(new HashMap<>());
 	private final Map<String, ConfigKey> configKeysByName;
+	private volatile boolean dirty = false;
+	private final DocumentListener dirtyListener = new DocumentListener() {
+
+		@Override
+		public void removeUpdate(DocumentEvent e) {
+			setDirty();
+		}
+
+		@Override
+		public void insertUpdate(DocumentEvent e) {
+			setDirty();
+		}
+
+		@Override
+		public void changedUpdate(DocumentEvent e) {
+			setDirty();
+		}
+	};
+	private final CopyOnWriteArrayList<Runnable> dirtyListeners = new CopyOnWriteArrayList<>();
 
 	public KafkaConfigPanel() {
 		this(null);
@@ -50,7 +74,7 @@ public class KafkaConfigPanel extends JPanel {
 				List<JTextField> inputs = new ArrayList<>();
 				if (values != null && !values.isEmpty()) {
 					for (String value : values) {
-						inputs.add(new JTextField(value));
+						inputs.add(registerDirtyListener(new JTextField(value)));
 					}
 				}
 				JPanel panel = new JPanel();
@@ -59,11 +83,11 @@ public class KafkaConfigPanel extends JPanel {
 				multiValProps.put(key, inputs);
 				repopulatePanel(key);
 			} else if (configKey.type.equals(ConfigDef.Type.PASSWORD)) {
-				JTextField txf = new JPasswordField(model.getProperty(configKey));
+				JTextField txf = registerDirtyListener(new JPasswordField(model.getProperty(configKey)));
 				component = txf;
 				singeValProps.put(key, txf);
 			} else {
-				JTextField txf = new JTextField(model.getProperty(configKey));
+				JTextField txf = registerDirtyListener(new JTextField(model.getProperty(configKey)));
 				component = txf;
 				singeValProps.put(key, txf);
 			}
@@ -92,6 +116,7 @@ public class KafkaConfigPanel extends JPanel {
 		JButton addBtn = new JButton("Add");
 		addBtn.addActionListener(e -> {
 			multiValProps.get(key).add(new JTextField());
+			setDirty();
 			repopulatePanel(key);
 			panel.invalidate();
 			panel.revalidate();
@@ -112,6 +137,7 @@ public class KafkaConfigPanel extends JPanel {
 			panel.add(deleteBtn, gbc);
 			deleteBtn.addActionListener(e -> {
 				multiValProps.get(key).remove(currentInput);
+				setDirty();
 				repopulatePanel(key);
 				panel.invalidate();
 				panel.revalidate();
@@ -142,4 +168,39 @@ public class KafkaConfigPanel extends JPanel {
 
 		return result;
 	}
+
+	protected <T extends JTextField> T registerDirtyListener(T component) {
+		component.getDocument().addDocumentListener(dirtyListener);
+		return component;
+	}
+
+	public boolean isDirty() {
+		return dirty;
+	}
+
+	public void setDirty() {
+		this.dirty = true;
+		notifyListeners();
+	}
+
+	public void setNotDirty() {
+		this.dirty = false;
+		notifyListeners();
+	}
+
+	protected void notifyListeners() {
+		Runnable[] listeners = dirtyListeners.toArray(new Runnable[0]);
+		for (Runnable listener : listeners) {
+			listener.run();
+		}
+	}
+
+	public void registerDirtyListener(Runnable dirtyListener) {
+		this.dirtyListeners.add(dirtyListener);
+	}
+
+	public void deregisterDirtyListeners() {
+		this.dirtyListeners.clear();
+	}
+
 }
