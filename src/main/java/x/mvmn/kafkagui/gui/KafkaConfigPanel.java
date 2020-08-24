@@ -74,7 +74,7 @@ public class KafkaConfigPanel extends JPanel {
 				List<JTextField> inputs = new ArrayList<>();
 				if (values != null && !values.isEmpty()) {
 					for (String value : values) {
-						inputs.add(registerDirtyListener(new JTextField(value)));
+						inputs.add(regDirtyListener(new JTextField(value)));
 					}
 				}
 				JPanel panel = new JPanel();
@@ -83,11 +83,11 @@ public class KafkaConfigPanel extends JPanel {
 				multiValProps.put(key, inputs);
 				repopulatePanel(key);
 			} else if (configKey.type.equals(ConfigDef.Type.PASSWORD)) {
-				JTextField txf = registerDirtyListener(new JPasswordField(model.getProperty(configKey)));
+				JTextField txf = regDirtyListener(new JPasswordField(model.getProperty(configKey)));
 				component = txf;
 				singeValProps.put(key, txf);
 			} else {
-				JTextField txf = registerDirtyListener(new JTextField(model.getProperty(configKey)));
+				JTextField txf = regDirtyListener(new JTextField(model.getProperty(configKey)));
 				component = txf;
 				singeValProps.put(key, txf);
 			}
@@ -169,7 +169,7 @@ public class KafkaConfigPanel extends JPanel {
 		return result;
 	}
 
-	protected <T extends JTextField> T registerDirtyListener(T component) {
+	protected <T extends JTextField> T regDirtyListener(T component) {
 		component.getDocument().addDocumentListener(dirtyListener);
 		return component;
 	}
