@@ -7,9 +7,15 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 import javax.swing.JFrame;
+import javax.swing.JOptionPane;
+import javax.swing.SwingUtilities;
+
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.KafkaAdminClient;
 
 import x.mvmn.kafkagui.gui.ConnectionsManagerWindow;
 import x.mvmn.kafkagui.gui.util.SwingUtil;
+import x.mvmn.kafkagui.lang.CallUtil;
 
 public class MVMnKafkaGUIApplication {
 
@@ -23,7 +29,16 @@ public class MVMnKafkaGUIApplication {
 				.filter(fn -> fn.toLowerCase().endsWith(".properties")).map(fn -> fn.substring(0, fn.length() - ".properties".length()))
 				.collect(Collectors.toCollection(TreeSet::new));
 
-		JFrame connectionsManagerWindow = new ConnectionsManagerWindow(appHomeFolder, existingConnectionConfigs);
+		JFrame connectionsManagerWindow = new ConnectionsManagerWindow(appHomeFolder, existingConnectionConfigs, cfg -> {
+			CallUtil.doSafely(() -> {
+				AdminClient ac = KafkaAdminClient.create(cfg);
+				// Perform list topics as a test
+				ac.listTopics().names().get();
+				SwingUtilities.invokeLater(() -> {
+					JOptionPane.showMessageDialog(null, "Connection successfull");
+				});
+			});
+		}, cfg -> {});
 		connectionsManagerWindow.pack();
 		SwingUtil.moveToScreenCenter(connectionsManagerWindow);
 		connectionsManagerWindow.setVisible(true);

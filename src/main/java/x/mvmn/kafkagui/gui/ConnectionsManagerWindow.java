@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 import java.util.SortedSet;
+import java.util.function.Consumer;
 
 import javax.swing.AbstractListModel;
 import javax.swing.JButton;
@@ -42,7 +43,8 @@ public class ConnectionsManagerWindow extends JFrame {
 	private final JButton btnConnect = new JButton("Connect");
 	private final ConfigsListModel configListModel = new ConfigsListModel();
 
-	public ConnectionsManagerWindow(File appHomeFolder, SortedSet<String> existingConnectionConfigs) {
+	public ConnectionsManagerWindow(File appHomeFolder, SortedSet<String> existingConnectionConfigs,
+			Consumer<Properties> testConnectionHandler, Consumer<Properties> connectionHandler) {
 		super("MVMn Kafka Client GUI");
 		this.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
@@ -57,6 +59,24 @@ public class ConnectionsManagerWindow extends JFrame {
 		configsList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 		configsList.setSelectedIndex(0);
 		currentKafkaConfig.registerDirtyListener(this::configDirty);
+
+		btnTestConnection.addActionListener(actEvt -> {
+			Properties props = currentKafkaConfig.getCurrentState().modelToProperties();
+			btnTestConnection.setEnabled(false);
+			SwingUtil.performSafely(() -> {
+				try {
+					testConnectionHandler.accept(props);
+				} finally {
+					btnTestConnection.setEnabled(true);
+				}
+			});
+		});
+		btnConnect.addActionListener(actEvt -> {
+			Properties props = currentKafkaConfig.getCurrentState().modelToProperties();
+			SwingUtil.performSafely(() -> {
+				connectionHandler.accept(props);
+			});
+		});
 
 		btnDelete.setEnabled(false);
 		configsList.addListSelectionListener(lse -> {

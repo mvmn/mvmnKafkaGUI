@@ -9,6 +9,7 @@ import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 
 import x.mvmn.kafkagui.lang.StackTraceUtil;
+import x.mvmn.kafkagui.lang.UnsafeOperation;
 
 public class SwingUtil {
 
@@ -30,10 +31,6 @@ public class SwingUtil {
 				}
 			}
 		}).start();
-	}
-
-	public static interface UnsafeOperation {
-		public void run() throws Exception;
 	}
 
 	public static void moveToScreenCenter(final Component component) {
