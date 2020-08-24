@@ -207,18 +207,18 @@ public class KafkaAdminGui extends JFrame {
 
 				gbc.gridy = 0;
 				gbc.gridx = 1;
-				gbc.weightx = 0.1;
+				gbc.weightx = 0.2;
 				SwingUtil.minPrefWidth(msgGetCount, 64);
 				topicMessagesPanel.add(msgGetCount, gbc);
 
 				gbc.gridy = 0;
 				gbc.gridx = 2;
-				gbc.weightx = 1.0;
+				gbc.weightx = 0.0;
 				topicMessagesPanel.add(btnGetMessages, gbc);
 
 				gbc.gridy = 0;
 				gbc.gridx = 3;
-				gbc.weightx = 1.0;
+				gbc.weightx = 0.0;
 				topicMessagesPanel.add(btnPostMessage, gbc);
 
 				gbc.gridy = 0;
