@@ -15,7 +15,7 @@ public class SwingUtil {
 
 	protected static ErrorMessageDialog errorMessageDialog = new ErrorMessageDialog(null);
 
-	public static <T> void performSafely(final UnsafeOperation operation) {
+	public static void performSafely(final UnsafeOperation operation) {
 		new Thread(new Runnable() {
 			public void run() {
 				try {
@@ -58,5 +58,11 @@ public class SwingUtil {
 		result.add(b);
 
 		return result;
+	}
+
+	public static <T extends Component> T minPrefWidth(T component, int minimumPreferredWidth) {
+		component.setPreferredSize(
+				new Dimension(Math.max(minimumPreferredWidth, component.getPreferredSize().width), component.getPreferredSize().height));
+		return component;
 	}
 }

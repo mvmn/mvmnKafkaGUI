@@ -24,6 +24,7 @@ import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
 
 import x.mvmn.kafkagui.gui.util.SwingUtil;
+import x.mvmn.kafkagui.lang.Tuple;
 import x.mvmn.kafkagui.model.KafkaConfigModel;
 
 public class ConnectionsManagerWindow extends JFrame {
@@ -44,7 +45,7 @@ public class ConnectionsManagerWindow extends JFrame {
 	private final ConfigsListModel configListModel = new ConfigsListModel();
 
 	public ConnectionsManagerWindow(File appHomeFolder, SortedSet<String> existingConnectionConfigs,
-			Consumer<Properties> testConnectionHandler, Consumer<Properties> connectionHandler) {
+			Consumer<Properties> testConnectionHandler, Consumer<Tuple<String, Properties, Void, Void, Void>> connectionHandler) {
 		super("MVMn Kafka Client GUI");
 		this.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
@@ -72,9 +73,10 @@ public class ConnectionsManagerWindow extends JFrame {
 			});
 		});
 		btnConnect.addActionListener(actEvt -> {
+			String configName = configs.get(currentlySelectedConfig);
 			Properties props = currentKafkaConfig.getCurrentState().modelToProperties();
 			SwingUtil.performSafely(() -> {
-				connectionHandler.accept(props);
+				connectionHandler.accept(Tuple.<String, Properties, Void, Void, Void> builder().a(configName).b(props).build());
 			});
 		});
 
@@ -115,7 +117,8 @@ public class ConnectionsManagerWindow extends JFrame {
 
 		JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, true, new JScrollPane(configsList), configPanel);
 		splitPane.setResizeWeight(0.2);
-		this.add(splitPane);
+		this.setLayout(new BorderLayout());
+		this.add(splitPane, BorderLayout.CENTER);
 
 		btnDelete.addActionListener(actEvt -> {
 			int idx = configsList.getSelectedIndex();
