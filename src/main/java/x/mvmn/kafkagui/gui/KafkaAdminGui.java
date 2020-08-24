@@ -261,20 +261,28 @@ public class KafkaAdminGui extends JFrame {
 						msgsToRetrieve = Integer.parseInt(countOfMsgsToRetrieve.trim());
 					}
 					String charset = msgViewEncoding.getSelectedItem().toString();
+					boolean latest = msgGetOption.getSelectedItem().toString().equalsIgnoreCase("Latest");
 					SwingUtil.performSafely(() -> {
 						clientConfig.setProperty("key.deserializer", StringDeserializer.class.getCanonicalName());
 						clientConfig.setProperty("value.deserializer", ByteArrayDeserializer.class.getCanonicalName());
 						try (KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(clientConfig)) {
 							TopicPartition tp = new TopicPartition(topicPartition.getA(), topicPartition.getB());
 							Long endOffset = consumer.endOffsets(Arrays.asList(tp)).get(tp);
-							long finishAt = endOffset != null ? endOffset.longValue() - 1 : 0;
 							Long beginningOffset = consumer.beginningOffsets(Arrays.asList(tp)).get(tp);
 							SwingUtilities.invokeLater(() -> {
 								msgDetectedBeginOffset.setText(beginningOffset != null ? beginningOffset.toString() : "");
 								msgDetectedEndOffset.setText(endOffset != null ? endOffset.toString() : "");
 							});
 							consumer.assign(Arrays.asList(tp));
-							consumer.seek(tp, Math.max(endOffset - msgsToRetrieve, beginningOffset));
+							long finishAt;
+							if (latest) {
+								finishAt = endOffset != null ? endOffset.longValue() - 1 : 0;
+								consumer.seek(tp, Math.max(endOffset - msgsToRetrieve, beginningOffset));
+							} else {
+								finishAt = Math.min((beginningOffset != null ? beginningOffset.longValue() : 0) + msgsToRetrieve,
+										endOffset - 1);
+								consumer.seek(tp, beginningOffset);
+							}
 							boolean done = false;
 							int attemptsLeft = 6;
 							while (!done && attemptsLeft-- > 0) {
