@@ -52,6 +52,8 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import x.mvmn.kafkagui.gui.topictree.model.KafkaTopic;
 import x.mvmn.kafkagui.gui.topictree.model.KafkaTopicPartition;
 import x.mvmn.kafkagui.gui.util.SwingUtil;
@@ -166,8 +168,10 @@ public class KafkaAdminGui extends JFrame {
 				msgPanel.add(msgOffsetField, gbc);
 				gbc.gridx = 1;
 				gbc.weightx = 1.0;
+				gbc.gridwidth = 2;
 				msgKeyField.setEditable(false);
 				msgPanel.add(msgKeyField, gbc);
+				gbc.gridwidth = 1;
 				gbc.gridy = 1;
 				gbc.gridx = 0;
 				gbc.weightx = 0.0;
@@ -175,11 +179,14 @@ public class KafkaAdminGui extends JFrame {
 				gbc.gridx = 1;
 				gbc.weightx = 1.0;
 				msgPanel.add(msgViewEncoding, gbc);
+				gbc.gridx = 2;
+				gbc.weightx = 1.0;
+				msgPanel.add(msgPostProcessor, gbc);
 				gbc.gridy = 2;
 				gbc.gridx = 0;
 				gbc.weightx = 1.0;
 				gbc.weighty = 1.0;
-				gbc.gridwidth = 2;
+				gbc.gridwidth = 3;
 				gbc.fill = GridBagConstraints.BOTH;
 				msgContent.setEditable(false);
 				msgPanel.add(new JScrollPane(msgContent), gbc);
@@ -301,7 +308,26 @@ public class KafkaAdminGui extends JFrame {
 						msgOffsetField.setText(String.valueOf(record.offset()));
 						msgKeyField.setText(record.key());
 						try {
-							msgContent.setText(new String(record.value(), msgViewEncoding.getSelectedItem().toString()));
+							byte[] messageContent = record.value();
+							String charset = msgViewEncoding.getSelectedItem().toString();
+							if (msgPostProcessor.getSelectedItem().toString().equalsIgnoreCase("JSON pretty-print")) {
+								SwingUtil.performSafely(() -> {
+									ObjectMapper om = new ObjectMapper();
+									byte[] messageContentPretty = messageContent;
+									try {
+										messageContentPretty = om.writerWithDefaultPrettyPrinter()
+												.writeValueAsBytes(om.readTree(messageContent));
+									} catch (Exception e) {
+										e.printStackTrace();
+									}
+									String messageText = new String(messageContentPretty, charset);
+									SwingUtilities.invokeLater(() -> {
+										msgContent.setText(messageText);
+									});
+								});
+							} else {
+								msgContent.setText(new String(messageContent, charset));
+							}
 						} catch (UnsupportedEncodingException e1) {
 							// Should never happen because we choose an encoring from the list of supported encodings (charsets)
 							e1.printStackTrace();
