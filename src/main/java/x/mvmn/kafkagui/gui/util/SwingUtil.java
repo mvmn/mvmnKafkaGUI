@@ -33,6 +33,14 @@ public class SwingUtil {
 		}).start();
 	}
 
+	public static void showError(final String message, final Throwable e) {
+		SwingUtilities.invokeLater(new Runnable() {
+			public void run() {
+				errorMessageDialog.show(null, message + ": " + e.getClass().getName() + " " + e.getMessage(), StackTraceUtil.toString(e));
+			}
+		});
+	}
+
 	public static void moveToScreenCenter(final Component component) {
 		Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
 		Dimension componentSize = component.getSize();

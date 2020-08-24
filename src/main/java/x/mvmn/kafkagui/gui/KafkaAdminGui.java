@@ -23,6 +23,7 @@ import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
+import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -48,9 +49,13 @@ import org.apache.kafka.clients.admin.ListTopicsOptions;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -89,6 +94,7 @@ public class KafkaAdminGui extends JFrame {
 	protected final JTextField msgDetectedEndOffset = new JTextField("n/a");
 	protected final JTextField msgDetectedBeginOffset = new JTextField("n/a");
 	protected final JButton btnGetMessages = new JButton("Get messages");
+	protected final JButton btnPostMessage = new JButton("Post message");
 	protected volatile AdminClient kafkaAdminClient;
 	protected final Properties clientConfig;
 	protected final List<ConsumerRecord<String, byte[]>> currentResults = new CopyOnWriteArrayList<>();
@@ -212,6 +218,11 @@ public class KafkaAdminGui extends JFrame {
 
 				gbc.gridy = 0;
 				gbc.gridx = 3;
+				gbc.weightx = 1.0;
+				topicMessagesPanel.add(btnPostMessage, gbc);
+
+				gbc.gridy = 0;
+				gbc.gridx = 4;
 				gbc.weightx = 0.3;
 				msgDetectedBeginOffset.setEditable(false);
 				msgDetectedBeginOffset.setBorder(BorderFactory.createTitledBorder("Begin offset"));
@@ -219,7 +230,7 @@ public class KafkaAdminGui extends JFrame {
 				topicMessagesPanel.add(msgDetectedBeginOffset, gbc);
 
 				gbc.gridy = 0;
-				gbc.gridx = 4;
+				gbc.gridx = 5;
 				gbc.weightx = 0.3;
 				msgDetectedEndOffset.setEditable(false);
 				msgDetectedEndOffset.setBorder(BorderFactory.createTitledBorder("End offset"));
@@ -230,7 +241,7 @@ public class KafkaAdminGui extends JFrame {
 				gbc.gridx = 0;
 				gbc.weightx = 1.0;
 				gbc.weighty = 1.0;
-				gbc.gridwidth = 5;
+				gbc.gridwidth = 6;
 				gbc.fill = GridBagConstraints.BOTH;
 				topicMessagesPanel.add(new JScrollPane(msgTable), gbc);
 
@@ -279,8 +290,8 @@ public class KafkaAdminGui extends JFrame {
 								finishAt = endOffset != null ? endOffset.longValue() - 1 : 0;
 								consumer.seek(tp, Math.max(endOffset - msgsToRetrieve, beginningOffset));
 							} else {
-								finishAt = Math.min((beginningOffset != null ? beginningOffset.longValue() : 0) + msgsToRetrieve,
-										endOffset - 1);
+								finishAt = Math.min((beginningOffset != null ? beginningOffset.longValue() : 0) + msgsToRetrieve, endOffset)
+										- 1;
 								consumer.seek(tp, beginningOffset);
 							}
 							boolean done = false;
@@ -342,6 +353,54 @@ public class KafkaAdminGui extends JFrame {
 						}
 					}
 				});
+
+				btnPostMessage.addActionListener(actEvt -> this.ifPartitionSelected(topicPartition -> {
+					JDialog postMessageDialog = new JDialog(KafkaAdminGui.this,
+							"Post message to topic " + topicPartition.getA() + " partition " + topicPartition.getB(), false);
+					postMessageDialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+					postMessageDialog.setLayout(new BorderLayout());
+					JTextField tf = new JTextField();
+					tf.setBorder(BorderFactory.createTitledBorder("Message key"));
+					JTextArea txa = new JTextArea();
+					txa.setBorder(BorderFactory.createTitledBorder("Message content"));
+					JButton btnPost = new JButton("Post");
+					JButton btnCancel = new JButton("Cancel");
+					btnCancel.addActionListener(e -> {
+						postMessageDialog.setVisible(false);
+						postMessageDialog.dispose();
+					});
+					postMessageDialog.add(SwingUtil.twoComponentPanel(btnCancel, btnPost), BorderLayout.SOUTH);
+					postMessageDialog.add(tf, BorderLayout.NORTH);
+					postMessageDialog.add(txa, BorderLayout.CENTER);
+					postMessageDialog.pack();
+					SwingUtil.moveToScreenCenter(postMessageDialog);
+					postMessageDialog.setVisible(true);
+
+					btnPost.addActionListener(ae -> {
+						postMessageDialog.setVisible(false);
+						postMessageDialog.dispose();
+						String messageKey = tf.getText().isEmpty() ? null : tf.getText();
+						String messageContent = txa.getText();
+						SwingUtil.performSafely(() -> {
+							clientConfig.setProperty("key.serializer", StringSerializer.class.getCanonicalName());
+							clientConfig.setProperty("value.serializer", ByteArraySerializer.class.getCanonicalName());
+							try (KafkaProducer<String, byte[]> producer = new KafkaProducer<String, byte[]>(clientConfig)) {
+								producer.send(
+										new ProducerRecord<String, byte[]>(topicPartition.getA(), topicPartition.getB(), messageKey,
+												messageContent.getBytes(StandardCharsets.UTF_8)),
+										(metadata, exception) -> SwingUtilities.invokeLater(() -> {
+											if (exception != null) {
+												SwingUtil.showError("Error while submitting message", exception);
+											} else {
+												JOptionPane.showMessageDialog(KafkaAdminGui.this,
+														"Message successfully posted to topic " + metadata.topic() + " partition "
+																+ metadata.partition() + " with offset " + metadata.offset());
+											}
+										}));
+							}
+						});
+					});
+				}));
 
 				KafkaAdminGui.this.setVisible(true);
 			});
