@@ -3,6 +3,7 @@ package x.mvmn.kafkagui.gui;
 import java.awt.BorderLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.event.ActionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.UnsupportedEncodingException;
@@ -62,6 +63,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import x.mvmn.kafkagui.gui.topictree.model.KafkaTopic;
 import x.mvmn.kafkagui.gui.topictree.model.KafkaTopicPartition;
 import x.mvmn.kafkagui.gui.util.SwingUtil;
+import x.mvmn.kafkagui.lang.HexUtil;
 import x.mvmn.kafkagui.lang.Tuple;
 
 public class KafkaAdminGui extends JFrame {
@@ -317,6 +319,17 @@ public class KafkaAdminGui extends JFrame {
 					});
 				}));
 
+				ActionListener alViewMessage = e -> {
+					int idx = msgTable.getSelectedRow();
+					if (idx >= 0 && idx < currentResults.size()) {
+						ConsumerRecord<String, byte[]> record = currentResults.get(idx);
+						viewMsgContent(record.value());
+					}
+				};
+				msgViewHex.addActionListener(alViewMessage);
+				msgViewEncoding.addActionListener(alViewMessage);
+				msgPostProcessor.addActionListener(alViewMessage);
+
 				msgTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 				msgTable.setRowSelectionAllowed(true);
 				msgTable.setColumnSelectionAllowed(false);
@@ -326,31 +339,7 @@ public class KafkaAdminGui extends JFrame {
 						ConsumerRecord<String, byte[]> record = currentResults.get(idx);
 						msgOffsetField.setText(String.valueOf(record.offset()));
 						msgKeyField.setText(record.key());
-						try {
-							byte[] messageContent = record.value();
-							String charset = msgViewEncoding.getSelectedItem().toString();
-							if (msgPostProcessor.getSelectedItem().toString().equalsIgnoreCase("JSON pretty-print")) {
-								SwingUtil.performSafely(() -> {
-									ObjectMapper om = new ObjectMapper();
-									byte[] messageContentPretty = messageContent;
-									try {
-										messageContentPretty = om.writerWithDefaultPrettyPrinter()
-												.writeValueAsBytes(om.readTree(messageContent));
-									} catch (Exception e) {
-										e.printStackTrace();
-									}
-									String messageText = new String(messageContentPretty, charset);
-									SwingUtilities.invokeLater(() -> {
-										msgContent.setText(messageText);
-									});
-								});
-							} else {
-								msgContent.setText(new String(messageContent, charset));
-							}
-						} catch (UnsupportedEncodingException e1) {
-							// Should never happen because we choose an encoring from the list of supported encodings (charsets)
-							e1.printStackTrace();
-						}
+						viewMsgContent(record.value());
 					}
 				});
 
@@ -405,6 +394,38 @@ public class KafkaAdminGui extends JFrame {
 				KafkaAdminGui.this.setVisible(true);
 			});
 		});
+	}
+
+	protected void viewMsgContent(byte[] messageContent) {
+		try {
+			if (msgViewHex.isSelected()) {
+				msgContent.setLineWrap(true);
+				msgContent.setText(HexUtil.toHex(messageContent, " "));
+			} else {
+				msgContent.setLineWrap(false);
+				String charset = msgViewEncoding.getSelectedItem().toString();
+				if (msgPostProcessor.getSelectedItem().toString().equalsIgnoreCase("JSON pretty-print")) {
+					SwingUtil.performSafely(() -> {
+						ObjectMapper om = new ObjectMapper();
+						byte[] messageContentPretty = messageContent;
+						try {
+							messageContentPretty = om.writerWithDefaultPrettyPrinter().writeValueAsBytes(om.readTree(messageContent));
+						} catch (Exception e) {
+							e.printStackTrace();
+						}
+						String messageText = new String(messageContentPretty, charset);
+						SwingUtilities.invokeLater(() -> {
+							msgContent.setText(messageText);
+						});
+					});
+				} else {
+					msgContent.setText(new String(messageContent, charset));
+				}
+			}
+		} catch (UnsupportedEncodingException e1) {
+			// Should never happen because we choose an encoring from the list of supported encodings (charsets)
+			e1.printStackTrace();
+		}
 	}
 
 	protected void ifPartitionSelected(Consumer<Tuple<String, Integer, Void, Void, Void>> action) {
