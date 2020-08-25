@@ -1,6 +1,7 @@
 package x.mvmn.kafkagui.gui;
 
 import java.awt.BorderLayout;
+import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionListener;
@@ -103,12 +104,19 @@ public class KafkaAdminGui extends JFrame {
 
 	protected final JComboBox<String> msgPostProcessor = new JComboBox<>(new String[] { "None", "JSON pretty-print" });
 
+	protected final Font defaultFont;
+	protected final Font monospacedFont;
+
 	public KafkaAdminGui(String configName, Properties clientConfig) {
 		super(configName + " - MVMn Kafka Client GUI");
 		this.clientConfig = clientConfig;
 		this.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 		this.setLayout(new BorderLayout());
 		JLabel label = new JLabel("Connecting...", SwingConstants.CENTER);
+
+		this.defaultFont = label.getFont();
+		this.monospacedFont = new Font(Font.MONOSPACED, defaultFont.getStyle(), defaultFont.getSize());
+
 		label.setBorder(BorderFactory.createEmptyBorder(32, 32, 32, 32));
 		this.add(label, BorderLayout.CENTER);
 		this.pack();
@@ -400,8 +408,10 @@ public class KafkaAdminGui extends JFrame {
 		try {
 			if (msgViewHex.isSelected()) {
 				msgContent.setLineWrap(true);
+				msgContent.setFont(monospacedFont);
 				msgContent.setText(HexUtil.toHex(messageContent, " "));
 			} else {
+				msgContent.setFont(defaultFont);
 				msgContent.setLineWrap(false);
 				String charset = msgViewEncoding.getSelectedItem().toString();
 				if (msgPostProcessor.getSelectedItem().toString().equalsIgnoreCase("JSON pretty-print")) {
