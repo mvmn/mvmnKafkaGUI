@@ -26,9 +26,9 @@ public class MVMnKafkaGUIApplication {
 		if (!appHomeFolder.exists()) {
 			appHomeFolder.mkdir();
 		}
-		SortedSet<String> existingConnectionConfigs = Arrays.asList(appHomeFolder.listFiles()).stream().map(File::getName)
-				.filter(fn -> fn.toLowerCase().endsWith(".properties")).map(fn -> fn.substring(0, fn.length() - ".properties".length()))
-				.collect(Collectors.toCollection(TreeSet::new));
+		SortedSet<String> existingConnectionConfigs = Arrays.asList(appHomeFolder.listFiles()).stream().filter(File::isFile)
+				.map(File::getName).filter(fn -> fn.toLowerCase().endsWith(".properties"))
+				.map(fn -> fn.substring(0, fn.length() - ".properties".length())).collect(Collectors.toCollection(TreeSet::new));
 
 		JFrame connectionsManagerWindow = new ConnectionsManagerWindow(appHomeFolder, existingConnectionConfigs, CallUtil.unsafe(cfg -> {
 			AdminClient ac = KafkaAdminClient.create(cfg);
@@ -37,7 +37,7 @@ public class MVMnKafkaGUIApplication {
 			SwingUtilities.invokeLater(() -> {
 				JOptionPane.showMessageDialog(null, "Connection successfull");
 			});
-		}), cfg -> new KafkaAdminGui(cfg.getA(), cfg.getB()));
+		}), cfg -> new KafkaAdminGui(cfg.getA(), cfg.getB(), appHomeFolder));
 		SwingUtil.minPrefWidth(connectionsManagerWindow, 800);
 		connectionsManagerWindow.pack();
 		SwingUtil.moveToScreenCenter(connectionsManagerWindow);

@@ -7,6 +7,8 @@ import java.awt.GridBagLayout;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.File;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -32,6 +34,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
+import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
@@ -44,6 +47,7 @@ import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeSelectionModel;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.DescribeTopicsOptions;
 import org.apache.kafka.clients.admin.KafkaAdminClient;
@@ -61,6 +65,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import groovy.util.Eval;
 import x.mvmn.kafkagui.gui.topictree.model.KafkaTopic;
 import x.mvmn.kafkagui.gui.topictree.model.KafkaTopicPartition;
 import x.mvmn.kafkagui.gui.util.SwingUtil;
@@ -102,12 +107,18 @@ public class KafkaAdminGui extends JFrame {
 	protected final Properties clientConfig;
 	protected final List<ConsumerRecord<String, byte[]>> currentResults = new CopyOnWriteArrayList<>();
 
-	protected final JComboBox<String> msgPostProcessor = new JComboBox<>(new String[] { "None", "JSON pretty-print" });
+	protected final JComboBox<String> msgPostProcessor = new JComboBox<>(new String[] { "None", "JSON pretty-print", "Groovy script" });
+	protected final JTextArea txaGroovyTransform = new JTextArea(DEFAULT_GROOVY_TRANSFORMER_CODE);
 
 	protected final Font defaultFont;
 	protected final Font monospacedFont;
+	protected final ObjectMapper objectMapper = new ObjectMapper();
 
-	public KafkaAdminGui(String configName, Properties clientConfig) {
+	private static final String DEFAULT_GROOVY_TRANSFORMER_CODE = "if(content.length>0 && (content[0] == '{' || content[0] == '[')) {\n"
+			+ "    om = new com.fasterxml.jackson.databind.ObjectMapper(); \n"
+			+ "    return om.writerWithDefaultPrettyPrinter().writeValueAsBytes(om.readTree(content));\n}\nreturn content;";
+
+	public KafkaAdminGui(String configName, Properties clientConfig, File appHomeFolder) {
 		super(configName + " - MVMn Kafka Client GUI");
 		this.clientConfig = clientConfig;
 		this.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
@@ -124,6 +135,21 @@ public class KafkaAdminGui extends JFrame {
 
 		this.addWindowListener(new WindowAdapter() {
 			@Override
+			public void windowClosing(WindowEvent e) {
+				String groovyTransformContent = txaGroovyTransform.getText();
+				new Thread() {
+					public void run() {
+						try {
+							File groovyTransformerCode = new File(appHomeFolder, "groovyTransformer.groovy");
+							FileUtils.write(groovyTransformerCode, groovyTransformContent, StandardCharsets.UTF_8, false);
+						} catch (IOException e) {
+							e.printStackTrace();
+						}
+					}
+				}.start();
+			}
+
+			@Override
 			public void windowClosed(WindowEvent e) {
 				AdminClient ac = kafkaAdminClient;
 				if (ac != null) {
@@ -133,6 +159,14 @@ public class KafkaAdminGui extends JFrame {
 		});
 
 		this.setVisible(true);
+
+		SwingUtil.performSafely(() -> {
+			File groovyTransformerCode = new File(appHomeFolder, "groovyTransformer.groovy");
+			if (groovyTransformerCode.exists() && groovyTransformerCode.isFile()) {
+				String content = FileUtils.readFileToString(groovyTransformerCode, StandardCharsets.UTF_8);
+				SwingUtilities.invokeLater(() -> txaGroovyTransform.setText(content));
+			}
+		});
 
 		SwingUtil.performSafely(() -> {
 			AdminClient ac = KafkaAdminClient.create(clientConfig);
@@ -205,7 +239,10 @@ public class KafkaAdminGui extends JFrame {
 				gbc.gridwidth = 3;
 				gbc.fill = GridBagConstraints.BOTH;
 				msgContent.setEditable(false);
-				msgPanel.add(new JScrollPane(msgContent), gbc);
+				JTabbedPane tabPane = new JTabbedPane();
+				tabPane.addTab("Message content", new JScrollPane(msgContent));
+				tabPane.addTab("Groovy processor", new JScrollPane(txaGroovyTransform));
+				msgPanel.add(tabPane, gbc);
 
 				gbc = new GridBagConstraints();
 				gbc.fill = GridBagConstraints.HORIZONTAL;
@@ -414,28 +451,45 @@ public class KafkaAdminGui extends JFrame {
 				msgContent.setFont(defaultFont);
 				msgContent.setLineWrap(false);
 				String charset = msgViewEncoding.getSelectedItem().toString();
-				if (msgPostProcessor.getSelectedItem().toString().equalsIgnoreCase("JSON pretty-print")) {
-					SwingUtil.performSafely(() -> {
-						ObjectMapper om = new ObjectMapper();
-						byte[] messageContentPretty = messageContent;
-						try {
-							messageContentPretty = om.writerWithDefaultPrettyPrinter().writeValueAsBytes(om.readTree(messageContent));
-						} catch (Exception e) {
-							e.printStackTrace();
-						}
-						String messageText = new String(messageContentPretty, charset);
-						SwingUtilities.invokeLater(() -> {
-							msgContent.setText(messageText);
-						});
-					});
-				} else {
+				String postProcessor = msgPostProcessor.getSelectedItem().toString();
+				if (postProcessor.equalsIgnoreCase("None")) {
 					msgContent.setText(new String(messageContent, charset));
+				} else {
+					msgContent.setText("Loading...");
+					SwingUtil.performSafely(() -> {
+						byte[] messageContentProcessed = processContent(postProcessor, messageContent);
+						String messageText = new String(messageContentProcessed, charset);
+						SwingUtilities.invokeLater(() -> msgContent.setText(messageText));
+					});
 				}
 			}
 		} catch (UnsupportedEncodingException e1) {
 			// Should never happen because we choose an encoring from the list of supported encodings (charsets)
 			e1.printStackTrace();
 		}
+	}
+
+	protected byte[] processContent(String postProcessorName, byte[] content) {
+		// TODO: apply strategy pattern when refactoring
+		if (postProcessorName.equals("JSON pretty-print")) {
+			if (content.length > 0 && (content[0] == '{' || content[0] == '['))
+				try {
+					content = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(objectMapper.readTree(content));
+				} catch (Exception e) {
+					// Don't bother user with error - just leave content as is, unformatted
+					e.printStackTrace();
+				}
+		} else if (postProcessorName.equals("Groovy script")) {
+			Object result = Eval.me("content", content, txaGroovyTransform.getText());
+			if (result instanceof byte[]) {
+				content = (byte[]) result;
+			} else if (result != null) {
+				content = result.toString().getBytes(StandardCharsets.UTF_8);
+			} else {
+				content = new byte[0];
+			}
+		}
+		return content;
 	}
 
 	protected void ifPartitionSelected(Consumer<Tuple<String, Integer, Void, Void, Void>> action) {
