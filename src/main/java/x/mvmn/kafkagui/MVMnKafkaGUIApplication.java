@@ -38,7 +38,7 @@ public class MVMnKafkaGUIApplication {
 				JOptionPane.showMessageDialog(null, "Connection successfull");
 			});
 		}), cfg -> new KafkaAdminGui(cfg.getA(), cfg.getB(), appHomeFolder));
-		SwingUtil.minPrefWidth(connectionsManagerWindow, 800);
+		SwingUtil.prefSizeRatioOfScreenSize(connectionsManagerWindow, 0.7f);
 		connectionsManagerWindow.pack();
 		SwingUtil.moveToScreenCenter(connectionsManagerWindow);
 		connectionsManagerWindow.setVisible(true);

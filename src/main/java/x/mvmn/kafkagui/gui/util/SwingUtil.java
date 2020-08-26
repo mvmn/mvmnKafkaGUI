@@ -68,6 +68,13 @@ public class SwingUtil {
 		return result;
 	}
 
+	public static <T extends Component> T prefSizeRatioOfScreenSize(T component, float ratio) {
+		Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+		Dimension prefSize = new Dimension((int) (screenSize.width * ratio), (int) (screenSize.height * ratio));
+		component.setPreferredSize(prefSize);
+		return component;
+	}
+
 	public static <T extends Component> T minPrefWidth(T component, int minimumPreferredWidth) {
 		component.setPreferredSize(
 				new Dimension(Math.max(minimumPreferredWidth, component.getPreferredSize().width), component.getPreferredSize().height));
