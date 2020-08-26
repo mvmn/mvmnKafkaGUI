@@ -334,29 +334,31 @@ public class KafkaAdminGui extends JFrame {
 								msgDetectedBeginOffset.setText(beginningOffset != null ? beginningOffset.toString() : "");
 								msgDetectedEndOffset.setText(endOffset != null ? endOffset.toString() : "");
 							});
-							consumer.assign(Arrays.asList(tp));
-							long finishAt;
-							if (latest) {
-								finishAt = endOffset != null ? endOffset.longValue() - 1 : 0;
-								consumer.seek(tp, Math.max(endOffset - msgsToRetrieve, beginningOffset));
-							} else {
-								finishAt = Math.min((beginningOffset != null ? beginningOffset.longValue() : 0) + msgsToRetrieve, endOffset)
-										- 1;
-								consumer.seek(tp, beginningOffset);
-							}
-							boolean done = false;
-							int attemptsLeft = 6;
-							while (!done && attemptsLeft-- > 0) {
-								List<ConsumerRecord<String, byte[]>> page = consumer.poll(Duration.ofSeconds(5)).records(tp);
-								currentResults.addAll(page);
-								for (ConsumerRecord<String, byte[]> message : page) {
-									msgTableModel.addRow(new String[] { String.valueOf(message.offset()), message.key(),
-											new String(message.value(), charset) });
+							if (endOffset != beginningOffset) {
+								consumer.assign(Arrays.asList(tp));
+								long finishAt;
+								if (latest) {
+									finishAt = endOffset != null ? endOffset.longValue() - 1 : 0;
+									consumer.seek(tp, Math.max(endOffset - msgsToRetrieve, beginningOffset));
+								} else {
+									finishAt = Math.min((beginningOffset != null ? beginningOffset.longValue() : 0) + msgsToRetrieve,
+											endOffset) - 1;
+									consumer.seek(tp, beginningOffset);
 								}
-								SwingUtilities.invokeLater(msgTableModel::fireTableDataChanged);
-								if (!page.isEmpty()) {
-									long lastRecordOffset = page.get(page.size() - 1).offset();
-									done = lastRecordOffset >= finishAt;
+								boolean done = false;
+								int attemptsLeft = 6;
+								while (!done && attemptsLeft-- > 0) {
+									List<ConsumerRecord<String, byte[]>> page = consumer.poll(Duration.ofSeconds(5)).records(tp);
+									currentResults.addAll(page);
+									for (ConsumerRecord<String, byte[]> message : page) {
+										msgTableModel.addRow(new String[] { String.valueOf(message.offset()), message.key(),
+												new String(message.value() != null ? message.value() : new byte[0], charset) });
+									}
+									SwingUtilities.invokeLater(msgTableModel::fireTableDataChanged);
+									if (!page.isEmpty()) {
+										long lastRecordOffset = page.get(page.size() - 1).offset();
+										done = lastRecordOffset >= finishAt;
+									}
 								}
 							}
 						} finally {
@@ -448,6 +450,7 @@ public class KafkaAdminGui extends JFrame {
 		try {
 			if (msgViewHex.isSelected()) {
 				msgContent.setLineWrap(true);
+				msgContent.setWrapStyleWord(true);
 				msgContent.setFont(monospacedFont);
 				msgContent.setText(HexUtil.toHex(messageContent, " "));
 			} else {
@@ -456,7 +459,7 @@ public class KafkaAdminGui extends JFrame {
 				String charset = msgViewEncoding.getSelectedItem().toString();
 				String postProcessor = msgPostProcessor.getSelectedItem().toString();
 				if (postProcessor.equalsIgnoreCase("None")) {
-					msgContent.setText(new String(messageContent, charset));
+					msgContent.setText(new String(messageContent != null ? messageContent : new byte[0], charset));
 				} else {
 					msgContent.setText("Loading...");
 					SwingUtil.performSafely(() -> {
@@ -486,23 +489,27 @@ public class KafkaAdminGui extends JFrame {
 
 	protected byte[] processContent(String postProcessorName, byte[] content) {
 		// TODO: apply strategy pattern when refactoring
-		if (postProcessorName.equals("JSON pretty-print")) {
-			if (content.length > 0 && (content[0] == '{' || content[0] == '['))
-				try {
-					content = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(objectMapper.readTree(content));
-				} catch (Exception e) {
-					// Don't bother user with error - just leave content as is, unformatted
-					e.printStackTrace();
+		if (content != null) {
+			if (postProcessorName.equals("JSON pretty-print")) {
+				if (content.length > 0 && (content[0] == '{' || content[0] == '['))
+					try {
+						content = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(objectMapper.readTree(content));
+					} catch (Exception e) {
+						// Don't bother user with error - just leave content as is, unformatted
+						e.printStackTrace();
+					}
+			} else if (postProcessorName.equals("Groovy script")) {
+				Object result = Eval.me("content", content, txaGroovyTransform.getText());
+				if (result instanceof byte[]) {
+					content = (byte[]) result;
+				} else if (result != null) {
+					content = result.toString().getBytes(StandardCharsets.UTF_8);
+				} else {
+					content = new byte[0];
 				}
-		} else if (postProcessorName.equals("Groovy script")) {
-			Object result = Eval.me("content", content, txaGroovyTransform.getText());
-			if (result instanceof byte[]) {
-				content = (byte[]) result;
-			} else if (result != null) {
-				content = result.toString().getBytes(StandardCharsets.UTF_8);
-			} else {
-				content = new byte[0];
 			}
+		} else {
+			return new byte[0];
 		}
 		return content;
 	}
