@@ -1,6 +1,7 @@
 package x.mvmn.kafkagui.gui;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
@@ -42,6 +43,7 @@ import javax.swing.JTree;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
@@ -70,6 +72,7 @@ import x.mvmn.kafkagui.gui.topictree.model.KafkaTopic;
 import x.mvmn.kafkagui.gui.topictree.model.KafkaTopicPartition;
 import x.mvmn.kafkagui.gui.util.SwingUtil;
 import x.mvmn.kafkagui.lang.HexUtil;
+import x.mvmn.kafkagui.lang.StackTraceUtil;
 import x.mvmn.kafkagui.lang.Tuple;
 
 public class KafkaAdminGui extends JFrame {
@@ -457,9 +460,21 @@ public class KafkaAdminGui extends JFrame {
 				} else {
 					msgContent.setText("Loading...");
 					SwingUtil.performSafely(() -> {
-						byte[] messageContentProcessed = processContent(postProcessor, messageContent);
+						String errorText = null;
+						byte[] messageContentProcessed = messageContent;
+						try {
+							messageContentProcessed = processContent(postProcessor, messageContent);
+						} catch (Exception e) {
+							errorText = "Error occurred: " + StackTraceUtil.toString(e);
+						}
 						String messageText = new String(messageContentProcessed, charset);
-						SwingUtilities.invokeLater(() -> msgContent.setText(messageText));
+						String finalErrorText = errorText;
+						SwingUtilities.invokeLater(() -> {
+							msgContent.setText(messageText);
+							msgContent.setToolTipText(finalErrorText);
+							msgContent.setForeground(
+									finalErrorText != null ? Color.red : (Color) UIManager.getDefaults().get("TextArea.foreground"));
+						});
 					});
 				}
 			}
