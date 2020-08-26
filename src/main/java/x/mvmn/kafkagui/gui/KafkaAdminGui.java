@@ -231,10 +231,10 @@ public class KafkaAdminGui extends JFrame {
 				msgPanel.add(msgViewHex, gbc);
 				gbc.gridx = 1;
 				gbc.weightx = 1.0;
-				msgPanel.add(msgViewEncoding, gbc);
+				msgPanel.add(msgPostProcessor, gbc);
 				gbc.gridx = 2;
 				gbc.weightx = 1.0;
-				msgPanel.add(msgPostProcessor, gbc);
+				msgPanel.add(msgViewEncoding, gbc);
 				gbc.gridy = 2;
 				gbc.gridx = 0;
 				gbc.weightx = 1.0;
@@ -379,6 +379,11 @@ public class KafkaAdminGui extends JFrame {
 				msgViewHex.addActionListener(alViewMessage);
 				msgViewEncoding.addActionListener(alViewMessage);
 				msgPostProcessor.addActionListener(alViewMessage);
+				msgViewHex.addActionListener(e -> {
+					boolean hex = msgViewHex.isSelected();
+					msgViewEncoding.setEnabled(!hex);
+					msgPostProcessor.setEnabled(!hex);
+				});
 
 				msgTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 				msgTable.setRowSelectionAllowed(true);
