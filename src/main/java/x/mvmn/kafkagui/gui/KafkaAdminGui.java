@@ -60,6 +60,7 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.acl.AclOperation;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -197,11 +198,15 @@ public class KafkaAdminGui extends JFrame {
 					topicNode.add(aclsNode);
 
 					if (description != null) {
-						description.partitions().stream()
-								.map(p -> KafkaTopicPartition.builder().topic(topic.getName()).number(p.partition()).build())
-								.forEach(partition -> partitionsNode.add(new DefaultMutableTreeNode(partition, false)));
-						description.authorizedOperations().stream().map(op -> op.name())
-								.forEach(opName -> aclsNode.add(new DefaultMutableTreeNode(opName, false)));
+						if (description.partitions() != null) {
+							description.partitions().stream()
+									.map(p -> KafkaTopicPartition.builder().topic(topic.getName()).number(p.partition()).build())
+									.forEach(partition -> partitionsNode.add(new DefaultMutableTreeNode(partition, false)));
+						}
+						if (description.authorizedOperations() != null) {
+							description.authorizedOperations().stream().map(AclOperation::name)
+									.forEach(opName -> aclsNode.add(new DefaultMutableTreeNode(opName, false)));
+						}
 					}
 				}
 				topicsTree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
