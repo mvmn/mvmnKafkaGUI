@@ -92,12 +92,6 @@ public class KafkaConfigPanel extends JPanel {
 				singeValProps.put(key, txf);
 			}
 			gbc.gridy = i;
-			// gbc.gridx = 0;
-			// gbc.weightx = 0.0;
-			// gbc.fill = GridBagConstraints.BOTH;
-			// JLabel label = new JLabel(key, JLabel.RIGHT);
-			// label.setVerticalAlignment(JLabel.TOP);
-			// this.add(label, gbc);
 			component.setBorder(BorderFactory.createTitledBorder(key));
 			gbc.fill = GridBagConstraints.HORIZONTAL;
 			gbc.weightx = 1.0;

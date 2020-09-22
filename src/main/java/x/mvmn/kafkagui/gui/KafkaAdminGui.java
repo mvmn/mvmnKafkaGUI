@@ -74,7 +74,6 @@ import x.mvmn.kafkagui.gui.topictree.model.KafkaTopicPartition;
 import x.mvmn.kafkagui.gui.util.SwingUtil;
 import x.mvmn.kafkagui.lang.HexUtil;
 import x.mvmn.kafkagui.lang.StackTraceUtil;
-import x.mvmn.kafkagui.lang.Tuple;
 
 public class KafkaAdminGui extends JFrame {
 	private static final long serialVersionUID = 3826007764248597964L;
@@ -332,7 +331,7 @@ public class KafkaAdminGui extends JFrame {
 						clientConfig.setProperty("key.deserializer", StringDeserializer.class.getCanonicalName());
 						clientConfig.setProperty("value.deserializer", ByteArrayDeserializer.class.getCanonicalName());
 						try (KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(clientConfig)) {
-							TopicPartition tp = new TopicPartition(topicPartition.getA(), topicPartition.getB());
+							TopicPartition tp = new TopicPartition(topicPartition.getTopic(), topicPartition.getNumber());
 							Long endOffset = consumer.endOffsets(Arrays.asList(tp)).get(tp);
 							Long beginningOffset = consumer.beginningOffsets(Arrays.asList(tp)).get(tp);
 							SwingUtilities.invokeLater(() -> {
@@ -405,7 +404,7 @@ public class KafkaAdminGui extends JFrame {
 
 				btnPostMessage.addActionListener(actEvt -> this.ifPartitionSelected(topicPartition -> {
 					JDialog postMessageDialog = new JDialog(KafkaAdminGui.this,
-							"Post message to topic " + topicPartition.getA() + " partition " + topicPartition.getB(), false);
+							"Post message to topic " + topicPartition.getTopic() + " partition " + topicPartition.getNumber(), false);
 					postMessageDialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 					postMessageDialog.setLayout(new BorderLayout());
 					JTextField tf = new JTextField();
@@ -435,8 +434,8 @@ public class KafkaAdminGui extends JFrame {
 							clientConfig.setProperty("value.serializer", ByteArraySerializer.class.getCanonicalName());
 							try (KafkaProducer<String, byte[]> producer = new KafkaProducer<String, byte[]>(clientConfig)) {
 								producer.send(
-										new ProducerRecord<String, byte[]>(topicPartition.getA(), topicPartition.getB(), messageKey,
-												messageContent.getBytes(StandardCharsets.UTF_8)),
+										new ProducerRecord<String, byte[]>(topicPartition.getTopic(), topicPartition.getNumber(),
+												messageKey, messageContent.getBytes(StandardCharsets.UTF_8)),
 										(metadata, exception) -> SwingUtilities.invokeLater(() -> {
 											if (exception != null) {
 												SwingUtil.showError("Error while submitting message", exception);
@@ -492,7 +491,7 @@ public class KafkaAdminGui extends JFrame {
 				}
 			}
 		} catch (UnsupportedEncodingException e1) {
-			// Should never happen because we choose an encoring from the list of supported encodings (charsets)
+			// Should never happen because we choose an encoding from the list of supported encodings (charsets)
 			e1.printStackTrace();
 		}
 	}
@@ -524,14 +523,12 @@ public class KafkaAdminGui extends JFrame {
 		return content;
 	}
 
-	protected void ifPartitionSelected(Consumer<Tuple<String, Integer, Void, Void, Void>> action) {
+	protected void ifPartitionSelected(Consumer<KafkaTopicPartition> action) {
 		Object selectedObject = topicsTree.getLastSelectedPathComponent();
 		if (selectedObject instanceof DefaultMutableTreeNode
 				&& ((DefaultMutableTreeNode) selectedObject).getUserObject() instanceof KafkaTopicPartition) {
 			KafkaTopicPartition partitionModel = (KafkaTopicPartition) ((DefaultMutableTreeNode) selectedObject).getUserObject();
-			String topic = partitionModel.getTopic();
-			Integer partition = partitionModel.getNumber();
-			action.accept(Tuple.<String, Integer, Void, Void, Void> builder().a(topic).b(partition).build());
+			action.accept(partitionModel);
 		} else {
 			JOptionPane.showMessageDialog(this, "Please select a topic partition");
 		}

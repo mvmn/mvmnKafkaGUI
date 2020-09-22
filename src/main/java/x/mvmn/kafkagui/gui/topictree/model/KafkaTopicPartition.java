@@ -1,18 +1,16 @@
 package x.mvmn.kafkagui.gui.topictree.model;
 
-import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.RequiredArgsConstructor;
 
 @Data
-@NoArgsConstructor
-@AllArgsConstructor
+@RequiredArgsConstructor
 @Builder
 public class KafkaTopicPartition implements Comparable<KafkaTopicPartition> {
 
-	private String topic;
-	private Integer number;
+	private final String topic;
+	private final Integer number;
 
 	@Override
 	public int compareTo(KafkaTopicPartition o) {
