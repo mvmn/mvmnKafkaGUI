@@ -2,6 +2,7 @@ package x.mvmn.kafkagui.gui;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
@@ -16,9 +17,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -47,6 +50,7 @@ import javax.swing.UIManager;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreeSelectionModel;
 
 import org.apache.commons.io.FileUtils;
@@ -54,11 +58,13 @@ import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.DescribeTopicsOptions;
 import org.apache.kafka.clients.admin.KafkaAdminClient;
 import org.apache.kafka.clients.admin.ListTopicsOptions;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
@@ -74,6 +80,7 @@ import x.mvmn.kafkagui.gui.topictree.model.KafkaTopicPartition;
 import x.mvmn.kafkagui.gui.util.SwingUtil;
 import x.mvmn.kafkagui.lang.HexUtil;
 import x.mvmn.kafkagui.lang.StackTraceUtil;
+import x.mvmn.kafkagui.lang.Tuple;
 
 public class KafkaAdminGui extends JFrame {
 	private static final long serialVersionUID = 3826007764248597964L;
@@ -81,8 +88,10 @@ public class KafkaAdminGui extends JFrame {
 	protected final DefaultMutableTreeNode topicsRootNode = new DefaultMutableTreeNode("Topics", true);
 	protected final DefaultTreeModel treeModel = new DefaultTreeModel(topicsRootNode);
 	protected final JTree topicsTree = new JTree(treeModel);
+	protected final JButton btnCreateTopic = new JButton("Create new topic");
+	protected final JButton btnDeleteTopic = new JButton("Delete topic");
 	protected final JPanel contentPanel = new JPanel(new BorderLayout());
-	protected final DefaultTableModel msgTableModel = new DefaultTableModel(new String[] { "Offset", "Key", "Content" }, 0) {
+	protected final DefaultTableModel msgTableModel = new DefaultTableModel(new String[] { "Partition", "Offset", "Key", "Content" }, 0) {
 		private static final long serialVersionUID = -4104977444040382766L;
 
 		@Override
@@ -101,7 +110,7 @@ public class KafkaAdminGui extends JFrame {
 	protected final JCheckBox msgViewHex = new JCheckBox("Hex");
 
 	protected final JComboBox<String> msgGetOption = new JComboBox<>(new String[] { "Latest", "Earliest" });
-	protected final JTextField msgGetCount = new JTextField("10");
+	protected final JTextField msgGetCount = SwingUtil.numericOnlyTextField(10L, 0L, null, false);
 	protected final JTextField msgDetectedEndOffset = new JTextField("n/a");
 	protected final JTextField msgDetectedBeginOffset = new JTextField("n/a");
 	protected final JButton btnGetMessages = new JButton("Get messages");
@@ -186,32 +195,15 @@ public class KafkaAdminGui extends JFrame {
 			SwingUtilities.invokeLater(() -> {
 				KafkaAdminGui.this.setVisible(false);
 				for (KafkaTopic topic : topics) {
-					TopicDescription description = topicDescriptions.get(topic.getName());
-					DefaultMutableTreeNode topicNode = new DefaultMutableTreeNode(topic, true);
-					topicsRootNode.add(topicNode);
-
-					DefaultMutableTreeNode partitionsNode = new DefaultMutableTreeNode("Partitions", true);
-					DefaultMutableTreeNode aclsNode = new DefaultMutableTreeNode("Authorized operations", true);
-
-					topicNode.add(partitionsNode);
-					topicNode.add(aclsNode);
-
-					if (description != null) {
-						if (description.partitions() != null) {
-							description.partitions().stream()
-									.map(p -> KafkaTopicPartition.builder().topic(topic.getName()).number(p.partition()).build())
-									.forEach(partition -> partitionsNode.add(new DefaultMutableTreeNode(partition, false)));
-						}
-						if (description.authorizedOperations() != null) {
-							description.authorizedOperations().stream().map(AclOperation::name)
-									.forEach(opName -> aclsNode.add(new DefaultMutableTreeNode(opName, false)));
-						}
-					}
+					topicsRootNode.add(createTopicNode(topic, topicDescriptions.get(topic.getName())));
 				}
 				topicsTree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
 				topicsTree.expandRow(0);
 				KafkaAdminGui.this.remove(label);
-				JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, true, new JScrollPane(topicsTree), contentPanel);
+				JPanel topicsPanel = new JPanel(new BorderLayout());
+				topicsPanel.add(new JScrollPane(topicsTree), BorderLayout.CENTER);
+				topicsPanel.add(SwingUtil.twoComponentPanel(btnCreateTopic, btnDeleteTopic), BorderLayout.SOUTH);
+				JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, true, topicsPanel, contentPanel);
 				splitPane.setResizeWeight(0.2);
 
 				msgViewEncoding.setSelectedItem(StandardCharsets.UTF_8.name());
@@ -311,7 +303,7 @@ public class KafkaAdminGui extends JFrame {
 				SwingUtil.moveToScreenCenter(this);
 				msgSplitPane.setDividerLocation(0.5);
 
-				btnGetMessages.addActionListener(actEvt -> this.ifPartitionSelected(topicPartition -> {
+				btnGetMessages.addActionListener(actEvt -> this.ifTopicOrPartitionSelected(topicPartition -> {
 					btnGetMessages.setEnabled(false);
 					currentResults.clear();
 					while (msgTableModel.getRowCount() > 0) {
@@ -331,37 +323,52 @@ public class KafkaAdminGui extends JFrame {
 						clientConfig.setProperty("key.deserializer", StringDeserializer.class.getCanonicalName());
 						clientConfig.setProperty("value.deserializer", ByteArrayDeserializer.class.getCanonicalName());
 						try (KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(clientConfig)) {
-							TopicPartition tp = new TopicPartition(topicPartition.getTopic(), topicPartition.getNumber());
-							Long endOffset = consumer.endOffsets(Arrays.asList(tp)).get(tp);
-							Long beginningOffset = consumer.beginningOffsets(Arrays.asList(tp)).get(tp);
-							SwingUtilities.invokeLater(() -> {
-								msgDetectedBeginOffset.setText(beginningOffset != null ? beginningOffset.toString() : "");
-								msgDetectedEndOffset.setText(endOffset != null ? endOffset.toString() : "");
-							});
-							if (endOffset != beginningOffset) {
-								consumer.assign(Arrays.asList(tp));
-								long finishAt;
-								if (latest) {
-									finishAt = endOffset != null ? endOffset.longValue() - 1 : 0;
-									consumer.seek(tp, Math.max(endOffset - msgsToRetrieve, beginningOffset));
-								} else {
-									finishAt = Math.min((beginningOffset != null ? beginningOffset.longValue() : 0) + msgsToRetrieve,
-											endOffset) - 1;
-									consumer.seek(tp, beginningOffset);
+							Integer partition = topicPartition.getB();
+							boolean partitionSelected = partition != null;
+							Set<Integer> partitions;
+							if (partitionSelected) {
+								partitions = new HashSet<>(Arrays.asList(partition));
+							} else {
+								partitions = consumer.partitionsFor(topicPartition.getA()).stream().map(PartitionInfo::partition)
+										.collect(Collectors.toSet());
+							}
+							for (Integer currentPartition : partitions) {
+								TopicPartition tp = new TopicPartition(topicPartition.getA(), currentPartition);
+								Long endOffset = consumer.endOffsets(Arrays.asList(tp)).get(tp);
+								Long beginningOffset = consumer.beginningOffsets(Arrays.asList(tp)).get(tp);
+								if (partitionSelected) {
+									SwingUtilities.invokeLater(() -> {
+										msgDetectedBeginOffset.setText(beginningOffset != null ? beginningOffset.toString() : "");
+										msgDetectedEndOffset.setText(endOffset != null ? endOffset.toString() : "");
+									});
 								}
-								boolean done = false;
-								int attemptsLeft = 6;
-								while (!done && attemptsLeft-- > 0) {
-									List<ConsumerRecord<String, byte[]>> page = consumer.poll(Duration.ofSeconds(5)).records(tp);
-									currentResults.addAll(page);
-									for (ConsumerRecord<String, byte[]> message : page) {
-										msgTableModel.addRow(new String[] { String.valueOf(message.offset()), message.key(),
-												new String(message.value() != null ? message.value() : new byte[0], charset) });
+
+								if (endOffset != beginningOffset) {
+									consumer.assign(Arrays.asList(tp));
+									long finishAt;
+									if (latest) {
+										finishAt = endOffset != null ? endOffset.longValue() - 1 : 0;
+										consumer.seek(tp, Math.max(endOffset - msgsToRetrieve, beginningOffset));
+									} else {
+										finishAt = Math.min((beginningOffset != null ? beginningOffset.longValue() : 0) + msgsToRetrieve,
+												endOffset) - 1;
+										consumer.seek(tp, beginningOffset);
 									}
-									SwingUtilities.invokeLater(msgTableModel::fireTableDataChanged);
-									if (!page.isEmpty()) {
-										long lastRecordOffset = page.get(page.size() - 1).offset();
-										done = lastRecordOffset >= finishAt;
+									boolean done = false;
+									int attemptsLeft = 6;
+									while (!done && attemptsLeft-- > 0) {
+										List<ConsumerRecord<String, byte[]>> page = consumer.poll(Duration.ofSeconds(5)).records(tp);
+										currentResults.addAll(page);
+										for (ConsumerRecord<String, byte[]> message : page) {
+											msgTableModel.addRow(new String[] { String.valueOf(message.partition()),
+													String.valueOf(message.offset()), message.key(),
+													new String(message.value() != null ? message.value() : new byte[0], charset) });
+										}
+										SwingUtilities.invokeLater(msgTableModel::fireTableDataChanged);
+										if (!page.isEmpty()) {
+											long lastRecordOffset = page.get(page.size() - 1).offset();
+											done = lastRecordOffset >= finishAt;
+										}
 									}
 								}
 							}
@@ -402,11 +409,12 @@ public class KafkaAdminGui extends JFrame {
 					}
 				});
 
-				btnPostMessage.addActionListener(actEvt -> this.ifPartitionSelected(topicPartition -> {
-					JDialog postMessageDialog = new JDialog(KafkaAdminGui.this,
-							"Post message to topic " + topicPartition.getTopic() + " partition " + topicPartition.getNumber(), false);
+				btnPostMessage.addActionListener(actEvt -> this.ifTopicOrPartitionSelected(topicPartition -> {
+					JDialog postMessageDialog = new JDialog(KafkaAdminGui.this, "Post message to topic " + topicPartition.getA()
+							+ (topicPartition.getB() != null ? ", partition " + topicPartition.getB() : ", any partition"), false);
 					postMessageDialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 					postMessageDialog.setLayout(new BorderLayout());
+					postMessageDialog.setMinimumSize(new Dimension(400, 300));
 					JTextField tf = new JTextField();
 					tf.setBorder(BorderFactory.createTitledBorder("Message key"));
 					JTextArea txa = new JTextArea();
@@ -434,8 +442,8 @@ public class KafkaAdminGui extends JFrame {
 							clientConfig.setProperty("value.serializer", ByteArraySerializer.class.getCanonicalName());
 							try (KafkaProducer<String, byte[]> producer = new KafkaProducer<String, byte[]>(clientConfig)) {
 								producer.send(
-										new ProducerRecord<String, byte[]>(topicPartition.getTopic(), topicPartition.getNumber(),
-												messageKey, messageContent.getBytes(StandardCharsets.UTF_8)),
+										new ProducerRecord<String, byte[]>(topicPartition.getA(), topicPartition.getB(), messageKey,
+												messageContent.getBytes(StandardCharsets.UTF_8)),
 										(metadata, exception) -> SwingUtilities.invokeLater(() -> {
 											if (exception != null) {
 												SwingUtil.showError("Error while submitting message", exception);
@@ -450,9 +458,72 @@ public class KafkaAdminGui extends JFrame {
 					});
 				}));
 
+				btnCreateTopic.addActionListener(e -> {
+					new NewTopicDialog(KafkaAdminGui.this, params -> {
+						try {
+							kafkaAdminClient.createTopics(Arrays.asList(new NewTopic(params.getA(), params.getB(), params.getC())));
+							TopicDescription topicDescription = kafkaAdminClient.describeTopics(Arrays.asList(params.getA())).values()
+									.get(params.getA()).get();
+							SwingUtilities.invokeLater(() -> {
+								DefaultMutableTreeNode topicNode = createTopicNode(
+										KafkaTopic.builder().name(params.getA()).internal(false).build(), topicDescription);
+								treeModel.insertNodeInto(topicNode, topicsRootNode, topicsRootNode.getChildCount());
+								JOptionPane.showMessageDialog(KafkaAdminGui.this, "Topic " + params.getA() + " successfully created.");
+							});
+						} catch (Exception ex) {
+							SwingUtil.showError("Error while creating topic", ex);
+						}
+					});
+				});
+				btnDeleteTopic.addActionListener(e -> {
+					ifTopicOrPartitionSelected(param -> {
+						String topicName = param.getA();
+						if (JOptionPane.OK_OPTION == JOptionPane.showConfirmDialog(KafkaAdminGui.this,
+								"Are you sure you want to delete topic " + topicName + "?", "Delete topic", JOptionPane.OK_CANCEL_OPTION)) {
+							new Thread(() -> kafkaAdminClient.deleteTopics(Arrays.asList(topicName)).all().whenComplete((a, exception) -> {
+								if (exception != null) {
+									SwingUtil.showError("Error while deleting topic", exception);
+								} else {
+									JOptionPane.showMessageDialog(KafkaAdminGui.this, "Topic delete request successfully sent");
+									DefaultMutableTreeNode node = param.getC();
+									while (node != null && !(node.getUserObject() instanceof KafkaTopic)) {
+										node = (DefaultMutableTreeNode) node.getParent();
+									}
+									if (node != null) {
+										treeModel.removeNodeFromParent(node);
+									}
+								}
+							})).start();
+						}
+					});
+				});
+
 				KafkaAdminGui.this.setVisible(true);
 			});
 		});
+	}
+
+	private DefaultMutableTreeNode createTopicNode(KafkaTopic topic, TopicDescription topicDescription) {
+		DefaultMutableTreeNode topicNode = new DefaultMutableTreeNode(topic, true);
+
+		DefaultMutableTreeNode partitionsNode = new DefaultMutableTreeNode("Partitions", true);
+		DefaultMutableTreeNode aclsNode = new DefaultMutableTreeNode("Authorized operations", true);
+
+		topicNode.add(partitionsNode);
+		topicNode.add(aclsNode);
+
+		if (topicDescription != null) {
+			if (topicDescription.partitions() != null) {
+				topicDescription.partitions().stream()
+						.map(p -> KafkaTopicPartition.builder().topic(topic.getName()).number(p.partition()).build())
+						.forEach(partition -> partitionsNode.add(new DefaultMutableTreeNode(partition, false)));
+			}
+			if (topicDescription.authorizedOperations() != null) {
+				topicDescription.authorizedOperations().stream().map(AclOperation::name)
+						.forEach(opName -> aclsNode.add(new DefaultMutableTreeNode(opName, false)));
+			}
+		}
+		return topicNode;
 	}
 
 	protected void viewMsgContent(byte[] messageContent) {
@@ -491,7 +562,7 @@ public class KafkaAdminGui extends JFrame {
 				}
 			}
 		} catch (UnsupportedEncodingException e1) {
-			// Should never happen because we choose an encoding from the list of supported encodings (charsets)
+			// Should never happen because we choose an encoring from the list of supported encodings (charsets)
 			e1.printStackTrace();
 		}
 	}
@@ -523,14 +594,27 @@ public class KafkaAdminGui extends JFrame {
 		return content;
 	}
 
-	protected void ifPartitionSelected(Consumer<KafkaTopicPartition> action) {
+	protected void ifTopicOrPartitionSelected(Consumer<Tuple<String, Integer, DefaultMutableTreeNode, Void, Void>> action) {
 		Object selectedObject = topicsTree.getLastSelectedPathComponent();
-		if (selectedObject instanceof DefaultMutableTreeNode
-				&& ((DefaultMutableTreeNode) selectedObject).getUserObject() instanceof KafkaTopicPartition) {
-			KafkaTopicPartition partitionModel = (KafkaTopicPartition) ((DefaultMutableTreeNode) selectedObject).getUserObject();
-			action.accept(partitionModel);
-		} else {
-			JOptionPane.showMessageDialog(this, "Please select a topic partition");
+		while (selectedObject != null) {
+			if (selectedObject instanceof DefaultMutableTreeNode
+					&& ((DefaultMutableTreeNode) selectedObject).getUserObject() instanceof KafkaTopicPartition) {
+				KafkaTopicPartition partitionModel = (KafkaTopicPartition) ((DefaultMutableTreeNode) selectedObject).getUserObject();
+				String topic = partitionModel.getTopic();
+				Integer partition = partitionModel.getNumber();
+				action.accept(Tuple.<String, Integer, DefaultMutableTreeNode, Void, Void> builder().a(topic).b(partition)
+						.c((DefaultMutableTreeNode) selectedObject).build());
+				return;
+			} else if (selectedObject instanceof DefaultMutableTreeNode
+					&& ((DefaultMutableTreeNode) selectedObject).getUserObject() instanceof KafkaTopic) {
+				KafkaTopic topicModel = (KafkaTopic) ((DefaultMutableTreeNode) selectedObject).getUserObject();
+				action.accept(Tuple.<String, Integer, DefaultMutableTreeNode, Void, Void> builder().a(topicModel.getName())
+						.c((DefaultMutableTreeNode) selectedObject).build());
+				return;
+			} else if (selectedObject instanceof TreeNode) {
+				selectedObject = ((TreeNode) selectedObject).getParent();
+			}
 		}
+		JOptionPane.showMessageDialog(this, "Please select a topic or partition");
 	}
 }

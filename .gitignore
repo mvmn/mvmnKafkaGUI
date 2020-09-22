@@ -3,6 +3,7 @@
 .project
 .settings/
 bin/
+.factorypath
 
 ## OS generated files
 .DS_Store

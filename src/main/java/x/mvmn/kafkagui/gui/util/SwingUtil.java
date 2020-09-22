@@ -4,9 +4,13 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.GridLayout;
 import java.awt.Toolkit;
+import java.text.NumberFormat;
 
+import javax.swing.JFormattedTextField;
 import javax.swing.JPanel;
+import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
+import javax.swing.text.NumberFormatter;
 
 import x.mvmn.kafkagui.lang.StackTraceUtil;
 import x.mvmn.kafkagui.lang.UnsafeOperation;
@@ -79,5 +83,17 @@ public class SwingUtil {
 		component.setPreferredSize(
 				new Dimension(Math.max(minimumPreferredWidth, component.getPreferredSize().width), component.getPreferredSize().height));
 		return component;
+	}
+
+	public static JTextField numericOnlyTextField(Long intialValue, Long min, Long max, boolean allowNegative) {
+		NumberFormatter formatter = new NumberFormatter(NumberFormat.getInstance());
+		formatter.setValueClass(Long.class);
+		formatter.setMinimum(min != null ? min : (allowNegative ? Long.MIN_VALUE : 0));
+		formatter.setMaximum(max != null ? max : Long.MAX_VALUE);
+		formatter.setAllowsInvalid(false);
+		formatter.setCommitsOnValidEdit(true);
+		JTextField txf = new JFormattedTextField(intialValue != null ? intialValue : 0L);
+
+		return txf;
 	}
 }
