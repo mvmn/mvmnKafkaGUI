@@ -15,6 +15,7 @@ import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
@@ -22,7 +23,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -322,56 +325,70 @@ public class KafkaAdminGui extends JFrame {
 					SwingUtil.performSafely(() -> {
 						clientConfig.setProperty("key.deserializer", StringDeserializer.class.getCanonicalName());
 						clientConfig.setProperty("value.deserializer", ByteArrayDeserializer.class.getCanonicalName());
-						try (KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(clientConfig)) {
-							Integer partition = topicPartition.getB();
-							boolean partitionSelected = partition != null;
+						try (KafkaConsumer<String, byte[]> kafkaConsumer = new KafkaConsumer<>(clientConfig)) {
+							Integer selectedPartition = topicPartition.getB();
+							boolean partitionSelected = selectedPartition != null;
 							Set<Integer> partitions;
 							if (partitionSelected) {
-								partitions = new HashSet<>(Arrays.asList(partition));
+								partitions = new HashSet<>(Arrays.asList(selectedPartition));
 							} else {
-								partitions = consumer.partitionsFor(topicPartition.getA()).stream().map(PartitionInfo::partition)
+								partitions = kafkaConsumer.partitionsFor(topicPartition.getA()).stream().map(PartitionInfo::partition)
 										.collect(Collectors.toSet());
 							}
-							for (Integer currentPartition : partitions) {
-								TopicPartition tp = new TopicPartition(topicPartition.getA(), currentPartition);
-								Long endOffset = consumer.endOffsets(Arrays.asList(tp)).get(tp);
-								Long beginningOffset = consumer.beginningOffsets(Arrays.asList(tp)).get(tp);
-								if (partitionSelected) {
-									SwingUtilities.invokeLater(() -> {
-										msgDetectedBeginOffset.setText(beginningOffset != null ? beginningOffset.toString() : "");
-										msgDetectedEndOffset.setText(endOffset != null ? endOffset.toString() : "");
-									});
-								}
+							Executor newThreadExecutor = command -> new Thread(command).start();
+							List<CompletableFuture<Void>> ops = new ArrayList<>(partitions.size());
+							for (int currentPartition : partitions) {
+								ops.add(CompletableFuture.runAsync(() -> {
+									try (KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(clientConfig)) {
+										TopicPartition tp = new TopicPartition(topicPartition.getA(), currentPartition);
+										Long endOffset = consumer.endOffsets(Arrays.asList(tp)).get(tp);
+										Long beginningOffset = consumer.beginningOffsets(Arrays.asList(tp)).get(tp);
+										if (partitionSelected) {
+											SwingUtilities.invokeLater(() -> {
+												msgDetectedBeginOffset.setText(beginningOffset != null ? beginningOffset.toString() : "");
+												msgDetectedEndOffset.setText(endOffset != null ? endOffset.toString() : "");
+											});
+										}
 
-								if (endOffset != beginningOffset) {
-									consumer.assign(Arrays.asList(tp));
-									long finishAt;
-									if (latest) {
-										finishAt = endOffset != null ? endOffset.longValue() - 1 : 0;
-										consumer.seek(tp, Math.max(endOffset - msgsToRetrieve, beginningOffset));
-									} else {
-										finishAt = Math.min((beginningOffset != null ? beginningOffset.longValue() : 0) + msgsToRetrieve,
-												endOffset) - 1;
-										consumer.seek(tp, beginningOffset);
-									}
-									boolean done = false;
-									int attemptsLeft = 6;
-									while (!done && attemptsLeft-- > 0) {
-										List<ConsumerRecord<String, byte[]>> page = consumer.poll(Duration.ofSeconds(5)).records(tp);
-										currentResults.addAll(page);
-										for (ConsumerRecord<String, byte[]> message : page) {
-											msgTableModel.addRow(new String[] { String.valueOf(message.partition()),
-													String.valueOf(message.offset()), message.key(),
-													new String(message.value() != null ? message.value() : new byte[0], charset) });
+										if (endOffset != beginningOffset) {
+											consumer.assign(Arrays.asList(tp));
+											long finishAt;
+											if (latest) {
+												finishAt = endOffset != null ? endOffset.longValue() - 1 : 0;
+												consumer.seek(tp, Math.max(endOffset - msgsToRetrieve, beginningOffset));
+											} else {
+												finishAt = Math.min(
+														(beginningOffset != null ? beginningOffset.longValue() : 0) + msgsToRetrieve,
+														endOffset) - 1;
+												consumer.seek(tp, beginningOffset);
+											}
+											boolean done = false;
+											int attemptsLeft = 6;
+											while (!done && attemptsLeft-- > 0) {
+												List<ConsumerRecord<String, byte[]>> page = consumer.poll(Duration.ofSeconds(5))
+														.records(tp);
+												currentResults.addAll(page);
+												for (ConsumerRecord<String, byte[]> message : page) {
+													synchronized (msgTableModel) {
+														msgTableModel.addRow(new String[] { String.valueOf(message.partition()),
+																String.valueOf(message.offset()), message.key(),
+																new String(message.value() != null ? message.value() : new byte[0],
+																		charset) });
+													}
+												}
+												if (!page.isEmpty()) {
+													long lastRecordOffset = page.get(page.size() - 1).offset();
+													done = lastRecordOffset >= finishAt;
+												}
+											}
 										}
-										SwingUtilities.invokeLater(msgTableModel::fireTableDataChanged);
-										if (!page.isEmpty()) {
-											long lastRecordOffset = page.get(page.size() - 1).offset();
-											done = lastRecordOffset >= finishAt;
-										}
+									} catch (Exception e) {
+										SwingUtil.showError("Error while reading messages", e);
 									}
-								}
+								}, newThreadExecutor));
 							}
+							CompletableFuture.allOf(ops.toArray(new CompletableFuture[ops.size()])).get();
+							SwingUtilities.invokeLater(msgTableModel::fireTableDataChanged);
 						} finally {
 							SwingUtilities.invokeLater(() -> {
 								btnGetMessages.setEnabled(true);
