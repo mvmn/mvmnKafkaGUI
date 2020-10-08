@@ -85,14 +85,15 @@ public class SwingUtil {
 		return component;
 	}
 
-	public static JTextField numericOnlyTextField(Long intialValue, Long min, Long max, boolean allowNegative) {
+	public static JTextField numericOnlyTextField(Long initialValue, Long min, Long max, boolean allowNegative) {
 		NumberFormatter formatter = new NumberFormatter(NumberFormat.getInstance());
 		formatter.setValueClass(Long.class);
 		formatter.setMinimum(min != null ? min : (allowNegative ? Long.MIN_VALUE : 0));
 		formatter.setMaximum(max != null ? max : Long.MAX_VALUE);
 		formatter.setAllowsInvalid(false);
 		formatter.setCommitsOnValidEdit(true);
-		JTextField txf = new JFormattedTextField(intialValue != null ? intialValue : 0L);
+		JFormattedTextField txf = new JFormattedTextField(formatter);
+		txf.setValue(initialValue != null ? initialValue : 0L);
 
 		return txf;
 	}
