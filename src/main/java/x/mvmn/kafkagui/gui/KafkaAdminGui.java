@@ -114,8 +114,10 @@ public class KafkaAdminGui extends JFrame {
 
 	protected final JComboBox<String> msgGetOption = new JComboBox<>(new String[] { "Latest", "Earliest" });
 	protected final JTextField msgGetCount = SwingUtil.numericOnlyTextField(10L, 0L, null, false);
-	protected final JTextField msgDetectedEndOffset = new JTextField("n/a");
-	protected final JTextField msgDetectedBeginOffset = new JTextField("n/a");
+	protected final JTextField msgReadTopic = new JTextField("");
+	protected final JTextField msgReadPartition = new JTextField("");
+	protected final JTextField msgDetectedEndOffset = new JTextField("");
+	protected final JTextField msgDetectedBeginOffset = new JTextField("");
 	protected final JButton btnGetMessages = new JButton("Get messages");
 	protected final JButton btnPostMessage = new JButton("Post message");
 	protected volatile AdminClient kafkaAdminClient;
@@ -270,23 +272,35 @@ public class KafkaAdminGui extends JFrame {
 				gbc.weightx = 0.0;
 				topicMessagesPanel.add(btnPostMessage, gbc);
 
-				gbc.gridy = 0;
-				gbc.gridx = 4;
-				gbc.weightx = 0.3;
-				msgDetectedBeginOffset.setEditable(false);
-				msgDetectedBeginOffset.setBorder(BorderFactory.createTitledBorder("Begin offset"));
-				SwingUtil.minPrefWidth(msgDetectedBeginOffset, 128);
-				topicMessagesPanel.add(msgDetectedBeginOffset, gbc);
-
-				gbc.gridy = 0;
-				gbc.gridx = 5;
-				gbc.weightx = 0.3;
-				msgDetectedEndOffset.setEditable(false);
-				msgDetectedEndOffset.setBorder(BorderFactory.createTitledBorder("End offset"));
-				SwingUtil.minPrefWidth(msgDetectedEndOffset, 128);
-				topicMessagesPanel.add(msgDetectedEndOffset, gbc);
+				gbc.gridy = 1;
+				gbc.gridx = 0;
+				gbc.weightx = 0.4;
+				msgReadTopic.setEditable(false);
+				msgReadTopic.setBorder(BorderFactory.createTitledBorder("Topic"));
+				topicMessagesPanel.add(msgReadTopic, gbc);
 
 				gbc.gridy = 1;
+				gbc.gridx = 1;
+				gbc.weightx = 0.4;
+				msgReadPartition.setEditable(false);
+				msgReadPartition.setBorder(BorderFactory.createTitledBorder("Partition"));
+				topicMessagesPanel.add(msgReadPartition, gbc);
+
+				gbc.gridy = 1;
+				gbc.gridx = 2;
+				gbc.weightx = 0.2;
+				msgDetectedBeginOffset.setEditable(false);
+				msgDetectedBeginOffset.setBorder(BorderFactory.createTitledBorder("Earliest offset"));
+				topicMessagesPanel.add(msgDetectedBeginOffset, gbc);
+
+				gbc.gridy = 1;
+				gbc.gridx = 3;
+				gbc.weightx = 0.2;
+				msgDetectedEndOffset.setEditable(false);
+				msgDetectedEndOffset.setBorder(BorderFactory.createTitledBorder("Latest offset"));
+				topicMessagesPanel.add(msgDetectedEndOffset, gbc);
+
+				gbc.gridy = 2;
 				gbc.gridx = 0;
 				gbc.weightx = 1.0;
 				gbc.weighty = 1.0;
@@ -343,12 +357,17 @@ public class KafkaAdminGui extends JFrame {
 										TopicPartition tp = new TopicPartition(topicPartition.getA(), currentPartition);
 										Long endOffset = consumer.endOffsets(Arrays.asList(tp)).get(tp);
 										Long beginningOffset = consumer.beginningOffsets(Arrays.asList(tp)).get(tp);
-										if (partitionSelected) {
-											SwingUtilities.invokeLater(() -> {
+										SwingUtilities.invokeLater(() -> {
+											msgReadTopic.setText(topicPartition.getA());
+											msgReadPartition.setText(partitionSelected ? String.valueOf(currentPartition) : "All");
+											if (partitionSelected) {
 												msgDetectedBeginOffset.setText(beginningOffset != null ? beginningOffset.toString() : "");
 												msgDetectedEndOffset.setText(endOffset != null ? endOffset.toString() : "");
-											});
-										}
+											} else {
+												msgDetectedBeginOffset.setText("");
+												msgDetectedEndOffset.setText("");
+											}
+										});
 
 										if (endOffset != beginningOffset) {
 											consumer.assign(Arrays.asList(tp));
