@@ -2,14 +2,17 @@ package x.mvmn.kafkagui.gui.util;
 
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.Frame;
 import java.awt.GridLayout;
 import java.awt.Toolkit;
 import java.text.NumberFormat;
+import java.util.Arrays;
 
 import javax.swing.JFormattedTextField;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 import javax.swing.text.NumberFormatter;
 
 import x.mvmn.kafkagui.lang.StackTraceUtil;
@@ -96,5 +99,22 @@ public class SwingUtil {
 		txf.setValue(initialValue != null ? initialValue : 0L);
 
 		return txf;
+	}
+
+	public static void setLookAndFeel(String lookAndFeelName) {
+		Arrays.stream(UIManager.getInstalledLookAndFeels()).filter(lnf -> lnf.getName().equals(lookAndFeelName)).findAny()
+				.ifPresent(lnf -> {
+					try {
+						if (!UIManager.getLookAndFeel().getName().equals(lnf.getName())) {
+							UIManager.setLookAndFeel(lnf.getClassName());
+							Arrays.stream(Frame.getFrames()).forEach(frame -> {
+								SwingUtilities.updateComponentTreeUI(frame);
+								frame.pack();
+							});
+						}
+					} catch (Exception error) {
+						showError("Error setting look&feel to " + lookAndFeelName, error);
+					}
+				});
 	}
 }

@@ -91,8 +91,8 @@ public class KafkaAdminGui extends JFrame {
 	protected final DefaultMutableTreeNode topicsRootNode = new DefaultMutableTreeNode("Topics", true);
 	protected final DefaultTreeModel treeModel = new DefaultTreeModel(topicsRootNode);
 	protected final JTree topicsTree = new JTree(treeModel);
-	protected final JButton btnCreateTopic = new JButton("Create new topic");
-	protected final JButton btnDeleteTopic = new JButton("Delete topic");
+	protected final JButton btnCreateTopic = new JButton("Create");
+	protected final JButton btnDeleteTopic = new JButton("Delete");
 	protected final JPanel contentPanel = new JPanel(new BorderLayout());
 	protected final DefaultTableModel msgTableModel = new DefaultTableModel(new String[] { "Partition", "Offset", "Key", "Content" }, 0) {
 		private static final long serialVersionUID = -4104977444040382766L;
