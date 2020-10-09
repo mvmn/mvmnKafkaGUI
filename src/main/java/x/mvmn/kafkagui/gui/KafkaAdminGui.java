@@ -450,7 +450,7 @@ public class KafkaAdminGui extends JFrame {
 							+ (topicPartition.getB() != null ? ", partition " + topicPartition.getB() : ", any partition"), false);
 					postMessageDialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 					postMessageDialog.setLayout(new BorderLayout());
-					postMessageDialog.setMinimumSize(new Dimension(400, 300));
+					postMessageDialog.setPreferredSize(new Dimension(600, 400));
 					JTextField tf = new JTextField();
 					tf.setBorder(BorderFactory.createTitledBorder("Message key"));
 					JTextArea txa = new JTextArea();
@@ -463,7 +463,7 @@ public class KafkaAdminGui extends JFrame {
 					});
 					postMessageDialog.add(SwingUtil.twoComponentPanel(btnCancel, btnPost), BorderLayout.SOUTH);
 					postMessageDialog.add(tf, BorderLayout.NORTH);
-					postMessageDialog.add(txa, BorderLayout.CENTER);
+					postMessageDialog.add(new JScrollPane(txa), BorderLayout.CENTER);
 					postMessageDialog.pack();
 					SwingUtil.moveToScreenCenter(postMessageDialog);
 					postMessageDialog.setVisible(true);
