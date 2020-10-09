@@ -5,13 +5,20 @@ import java.util.Arrays;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.KafkaAdminClient;
+
+import com.formdev.flatlaf.FlatDarculaLaf;
+import com.formdev.flatlaf.FlatDarkLaf;
+import com.formdev.flatlaf.FlatIntelliJLaf;
+import com.formdev.flatlaf.FlatLightLaf;
 
 import x.mvmn.kafkagui.gui.ConnectionsManagerWindow;
 import x.mvmn.kafkagui.gui.KafkaAdminGui;
@@ -30,17 +37,23 @@ public class MVMnKafkaGUIApplication {
 				.map(File::getName).filter(fn -> fn.toLowerCase().endsWith(".properties"))
 				.map(fn -> fn.substring(0, fn.length() - ".properties".length())).collect(Collectors.toCollection(TreeSet::new));
 
-		JFrame connectionsManagerWindow = new ConnectionsManagerWindow(appHomeFolder, existingConnectionConfigs, CallUtil.unsafe(cfg -> {
-			AdminClient ac = KafkaAdminClient.create(cfg);
-			// Perform list topics as a test
-			ac.listTopics().names().get();
-			SwingUtilities.invokeLater(() -> {
-				JOptionPane.showMessageDialog(null, "Connection successfull");
-			});
-		}), cfg -> new KafkaAdminGui(cfg.getA(), cfg.getB(), appHomeFolder));
-		SwingUtil.prefSizeRatioOfScreenSize(connectionsManagerWindow, 0.7f);
-		connectionsManagerWindow.pack();
-		SwingUtil.moveToScreenCenter(connectionsManagerWindow);
-		connectionsManagerWindow.setVisible(true);
+		SwingUtilities.invokeLater(() -> {
+			Stream.of(FlatLightLaf.class, FlatIntelliJLaf.class, FlatDarkLaf.class, FlatDarculaLaf.class)
+					.forEach(lafClass -> UIManager.installLookAndFeel(lafClass.getSimpleName(), lafClass.getCanonicalName()));
+
+			JFrame connectionsManagerWindow = new ConnectionsManagerWindow(appHomeFolder, existingConnectionConfigs,
+					CallUtil.unsafe(cfg -> {
+						AdminClient ac = KafkaAdminClient.create(cfg);
+						// Perform list topics as a test
+						ac.listTopics().names().get();
+						SwingUtilities.invokeLater(() -> {
+							JOptionPane.showMessageDialog(null, "Connection successfull");
+						});
+					}), cfg -> new KafkaAdminGui(cfg.getA(), cfg.getB(), appHomeFolder));
+			SwingUtil.prefSizeRatioOfScreenSize(connectionsManagerWindow, 0.7f);
+			connectionsManagerWindow.pack();
+			SwingUtil.moveToScreenCenter(connectionsManagerWindow);
+			connectionsManagerWindow.setVisible(true);
+		});
 	}
 }
