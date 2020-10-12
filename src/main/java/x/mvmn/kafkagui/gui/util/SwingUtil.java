@@ -11,8 +11,10 @@ import java.util.Arrays;
 import javax.swing.JFormattedTextField;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
+import javax.swing.LookAndFeel;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
+import javax.swing.UIManager.LookAndFeelInfo;
 import javax.swing.text.NumberFormatter;
 
 import x.mvmn.kafkagui.lang.StackTraceUtil;
@@ -99,6 +101,12 @@ public class SwingUtil {
 		txf.setValue(initialValue != null ? initialValue : 0L);
 
 		return txf;
+	}
+
+	public static String getLookAndFeelName(LookAndFeel lnf) {
+		return Arrays.stream(UIManager.getInstalledLookAndFeels())
+				.filter(lnfInfo -> lnfInfo.getClassName().equals(lnf.getClass().getCanonicalName())).map(LookAndFeelInfo::getName).findAny()
+				.orElse(null);
 	}
 
 	public static void setLookAndFeel(String lookAndFeelName) {

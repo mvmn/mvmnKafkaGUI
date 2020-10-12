@@ -32,10 +32,12 @@ import x.mvmn.kafkagui.gui.util.JMenuBarBuilder.JMenuBuilder;
 import x.mvmn.kafkagui.gui.util.SwingUtil;
 import x.mvmn.kafkagui.lang.Tuple;
 import x.mvmn.kafkagui.model.KafkaConfigModel;
+import x.mvmn.kafkagui.util.FileBackedProperties;
 
 public class ConnectionsManagerWindow extends JFrame {
 	private static final long serialVersionUID = -3884034416111932108L;
 
+	private final FileBackedProperties appConfig;
 	private final File appHomeFolder;
 
 	private final JList<String> configsList;
@@ -50,18 +52,20 @@ public class ConnectionsManagerWindow extends JFrame {
 	private final JButton btnConnect = new JButton("Connect");
 	private final ConfigsListModel configListModel = new ConfigsListModel();
 
-	public ConnectionsManagerWindow(File appHomeFolder, SortedSet<String> existingConnectionConfigs,
+	public ConnectionsManagerWindow(FileBackedProperties appConfig, File appHomeFolder, SortedSet<String> existingConnectionConfigs,
 			Consumer<Properties> testConnectionHandler, Consumer<Tuple<String, Properties, Void, Void, Void>> connectionHandler) {
 		super("MVMn Kafka Client GUI");
+		this.appConfig = appConfig;
 		this.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
 		JMenuBuilder menuBuilder = new JMenuBarBuilder().menu("Look&Feel");
-		String currentLnF = UIManager.getLookAndFeel().getName();
+		String currentLnF = SwingUtil.getLookAndFeelName(UIManager.getLookAndFeel());
 		List<JCheckBoxMenuItem> lnfOptions = new ArrayList<>();
 		Arrays.stream(UIManager.getInstalledLookAndFeels()).map(LookAndFeelInfo::getName)
 				.forEach(lnf -> menuBuilder.item(lnf).checkbox().checked(currentLnF.equals(lnf)).actr(e -> {
 					SwingUtil.setLookAndFeel(lnf);
 					lnfOptions.forEach(mi -> mi.setState(lnf.equals(mi.getText())));
+					new Thread(() -> saveLaFConfig(lnf)).start();
 				}).process(mi -> lnfOptions.add((JCheckBoxMenuItem) mi)).build());
 
 		this.setJMenuBar(menuBuilder.build().build());
@@ -181,6 +185,10 @@ public class ConnectionsManagerWindow extends JFrame {
 				btnSave.setEnabled(true);
 			}
 		});
+	}
+
+	private void saveLaFConfig(String lnf) {
+		appConfig.setProperty("gui.lookandfeel", lnf);
 	}
 
 	protected void setConfig(KafkaConfigModel configModel) {

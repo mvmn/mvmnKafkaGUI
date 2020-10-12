@@ -24,6 +24,7 @@ import x.mvmn.kafkagui.gui.ConnectionsManagerWindow;
 import x.mvmn.kafkagui.gui.KafkaAdminGui;
 import x.mvmn.kafkagui.gui.util.SwingUtil;
 import x.mvmn.kafkagui.lang.CallUtil;
+import x.mvmn.kafkagui.util.FileBackedProperties;
 
 public class MVMnKafkaGUIApplication {
 
@@ -36,12 +37,19 @@ public class MVMnKafkaGUIApplication {
 		SortedSet<String> existingConnectionConfigs = Arrays.asList(appHomeFolder.listFiles()).stream().filter(File::isFile)
 				.map(File::getName).filter(fn -> fn.toLowerCase().endsWith(".properties"))
 				.map(fn -> fn.substring(0, fn.length() - ".properties".length())).collect(Collectors.toCollection(TreeSet::new));
+		File configFile = new File(appHomeFolder, "config.cfg");
+		FileBackedProperties appConfig = new FileBackedProperties(configFile);
 
+		String lookAndFeelName = appConfig.getProperty("gui.lookandfeel");
 		SwingUtilities.invokeLater(() -> {
 			Stream.of(FlatLightLaf.class, FlatIntelliJLaf.class, FlatDarkLaf.class, FlatDarculaLaf.class)
 					.forEach(lafClass -> UIManager.installLookAndFeel(lafClass.getSimpleName(), lafClass.getCanonicalName()));
 
-			JFrame connectionsManagerWindow = new ConnectionsManagerWindow(appHomeFolder, existingConnectionConfigs,
+			if (lookAndFeelName != null) {
+				SwingUtil.setLookAndFeel(lookAndFeelName);
+			}
+
+			JFrame connectionsManagerWindow = new ConnectionsManagerWindow(appConfig, appHomeFolder, existingConnectionConfigs,
 					CallUtil.unsafe(cfg -> {
 						AdminClient ac = KafkaAdminClient.create(cfg);
 						// Perform list topics as a test
