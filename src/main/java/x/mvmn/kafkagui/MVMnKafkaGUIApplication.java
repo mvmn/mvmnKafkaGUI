@@ -54,9 +54,7 @@ public class MVMnKafkaGUIApplication {
 						AdminClient ac = KafkaAdminClient.create(cfg);
 						// Perform list topics as a test
 						ac.listTopics().names().get();
-						SwingUtilities.invokeLater(() -> {
-							JOptionPane.showMessageDialog(null, "Connection successfull");
-						});
+						SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(null, "Connection successfull"));
 					}), cfg -> new KafkaAdminGui(cfg.getA(), cfg.getB(), appHomeFolder));
 			SwingUtil.prefSizeRatioOfScreenSize(connectionsManagerWindow, 0.7f);
 			connectionsManagerWindow.pack();

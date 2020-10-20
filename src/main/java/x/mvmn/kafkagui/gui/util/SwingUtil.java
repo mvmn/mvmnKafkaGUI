@@ -5,6 +5,7 @@ import java.awt.Dimension;
 import java.awt.Frame;
 import java.awt.GridLayout;
 import java.awt.Toolkit;
+import java.awt.Window;
 import java.text.NumberFormat;
 import java.util.Arrays;
 
@@ -109,16 +110,26 @@ public class SwingUtil {
 				.orElse(null);
 	}
 
+	public static void updateComponentTreeUIForAllWindows() {
+		for (Frame frame : Frame.getFrames()) {
+			updateComponentTreeUI(frame);
+		}
+	}
+
+	public static void updateComponentTreeUI(Window window) {
+		for (Window childWindow : window.getOwnedWindows()) {
+			updateComponentTreeUI(childWindow);
+		}
+		SwingUtilities.updateComponentTreeUI(window);
+	}
+
 	public static void setLookAndFeel(String lookAndFeelName) {
 		Arrays.stream(UIManager.getInstalledLookAndFeels()).filter(lnf -> lnf.getName().equals(lookAndFeelName)).findAny()
 				.ifPresent(lnf -> {
 					try {
 						if (!UIManager.getLookAndFeel().getName().equals(lnf.getName())) {
 							UIManager.setLookAndFeel(lnf.getClassName());
-							Arrays.stream(Frame.getFrames()).forEach(frame -> {
-								SwingUtilities.updateComponentTreeUI(frame);
-								frame.pack();
-							});
+							updateComponentTreeUIForAllWindows();
 						}
 					} catch (Exception error) {
 						showError("Error setting look&feel to " + lookAndFeelName, error);
