@@ -135,6 +135,9 @@ public class KafkaAdminGui extends JFrame {
 			+ "    om = new com.fasterxml.jackson.databind.ObjectMapper(); \n"
 			+ "    return om.writerWithDefaultPrettyPrinter().writeValueAsBytes(om.readTree(content));\n}\nreturn content;";
 
+	protected volatile boolean receiveInProgress = false;
+	protected volatile boolean topicOrPartitionSelected = false;
+
 	public KafkaAdminGui(String configName, Properties clientConfig, File appHomeFolder) {
 		super(configName + " - MVMn Kafka Client GUI");
 		this.clientConfig = clientConfig;
@@ -196,6 +199,8 @@ public class KafkaAdminGui extends JFrame {
 					.describeTopics(topics.stream().map(KafkaTopic::getName).collect(Collectors.toSet()),
 							new DescribeTopicsOptions().includeAuthorizedOperations(true))
 					.all().get();
+
+			topicsTree.getSelectionModel().addTreeSelectionListener(e -> onTopicsTreeSelectionChange());
 
 			SwingUtilities.invokeLater(() -> {
 				KafkaAdminGui.this.setVisible(false);
@@ -321,7 +326,9 @@ public class KafkaAdminGui extends JFrame {
 				msgSplitPane.setDividerLocation(0.5);
 
 				btnGetMessages.addActionListener(actEvt -> this.ifTopicOrPartitionSelected(topicPartition -> {
-					btnGetMessages.setEnabled(false);
+					receiveInProgress = true;
+					onReceiveStateChange();
+
 					currentResults.clear();
 					while (msgTableModel.getRowCount() > 0) {
 						msgTableModel.removeRow(0);
@@ -409,8 +416,9 @@ public class KafkaAdminGui extends JFrame {
 							CompletableFuture.allOf(ops.toArray(new CompletableFuture[ops.size()])).get();
 							SwingUtilities.invokeLater(msgTableModel::fireTableDataChanged);
 						} finally {
+							receiveInProgress = false;
 							SwingUtilities.invokeLater(() -> {
-								btnGetMessages.setEnabled(true);
+								onReceiveStateChange();
 							});
 						}
 					});
@@ -533,6 +541,9 @@ public class KafkaAdminGui extends JFrame {
 						}
 					});
 				});
+				
+				updReceiveButtonState();
+				updSendButtonState();
 
 				KafkaAdminGui.this.setVisible(true);
 			});
@@ -630,7 +641,7 @@ public class KafkaAdminGui extends JFrame {
 		return content;
 	}
 
-	protected void ifTopicOrPartitionSelected(Consumer<Tuple<String, Integer, DefaultMutableTreeNode, Void, Void>> action) {
+	protected Tuple<String, Integer, DefaultMutableTreeNode, Void, Void> isTopicOrPartitionSelected() {
 		Object selectedObject = topicsTree.getLastSelectedPathComponent();
 		while (selectedObject != null) {
 			if (selectedObject instanceof DefaultMutableTreeNode
@@ -638,19 +649,44 @@ public class KafkaAdminGui extends JFrame {
 				KafkaTopicPartition partitionModel = (KafkaTopicPartition) ((DefaultMutableTreeNode) selectedObject).getUserObject();
 				String topic = partitionModel.getTopic();
 				Integer partition = partitionModel.getNumber();
-				action.accept(Tuple.<String, Integer, DefaultMutableTreeNode, Void, Void> builder().a(topic).b(partition)
-						.c((DefaultMutableTreeNode) selectedObject).build());
-				return;
+				return Tuple.<String, Integer, DefaultMutableTreeNode, Void, Void> builder().a(topic).b(partition)
+						.c((DefaultMutableTreeNode) selectedObject).build();
 			} else if (selectedObject instanceof DefaultMutableTreeNode
 					&& ((DefaultMutableTreeNode) selectedObject).getUserObject() instanceof KafkaTopic) {
 				KafkaTopic topicModel = (KafkaTopic) ((DefaultMutableTreeNode) selectedObject).getUserObject();
-				action.accept(Tuple.<String, Integer, DefaultMutableTreeNode, Void, Void> builder().a(topicModel.getName())
-						.c((DefaultMutableTreeNode) selectedObject).build());
-				return;
+				return Tuple.<String, Integer, DefaultMutableTreeNode, Void, Void> builder().a(topicModel.getName())
+						.c((DefaultMutableTreeNode) selectedObject).build();
 			} else if (selectedObject instanceof TreeNode) {
 				selectedObject = ((TreeNode) selectedObject).getParent();
 			}
 		}
-		JOptionPane.showMessageDialog(this, "Please select a topic or partition");
+		return null;
+	}
+
+	protected void ifTopicOrPartitionSelected(Consumer<Tuple<String, Integer, DefaultMutableTreeNode, Void, Void>> action) {
+		Tuple<String, Integer, DefaultMutableTreeNode, Void, Void> selection = isTopicOrPartitionSelected();
+		if (selection == null) {
+			JOptionPane.showMessageDialog(this, "Please select a topic or partition");
+		} else {
+			action.accept(selection);
+		}
+	}
+
+	protected void updReceiveButtonState() {
+		btnGetMessages.setEnabled(!receiveInProgress && topicOrPartitionSelected);
+	}
+
+	protected void updSendButtonState() {
+		btnPostMessage.setEnabled(topicOrPartitionSelected);
+	}
+
+	protected void onReceiveStateChange() {
+		updReceiveButtonState();
+	}
+
+	protected void onTopicsTreeSelectionChange() {
+		topicOrPartitionSelected = isTopicOrPartitionSelected() != null;
+		updReceiveButtonState();
+		updSendButtonState();
 	}
 }
