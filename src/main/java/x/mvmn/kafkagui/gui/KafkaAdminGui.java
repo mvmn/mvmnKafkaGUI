@@ -542,8 +542,7 @@ public class KafkaAdminGui extends JFrame {
 					});
 				});
 				
-				updReceiveButtonState();
-				updSendButtonState();
+				onTopicsTreeSelectionChange();
 
 				KafkaAdminGui.this.setVisible(true);
 			});
@@ -679,6 +678,10 @@ public class KafkaAdminGui extends JFrame {
 	protected void updSendButtonState() {
 		btnPostMessage.setEnabled(topicOrPartitionSelected);
 	}
+	
+	protected void updDeleteTopicButtonState() {
+		btnDeleteTopic.setEnabled(topicOrPartitionSelected);
+	}
 
 	protected void onReceiveStateChange() {
 		updReceiveButtonState();
@@ -688,5 +691,6 @@ public class KafkaAdminGui extends JFrame {
 		topicOrPartitionSelected = isTopicOrPartitionSelected() != null;
 		updReceiveButtonState();
 		updSendButtonState();
+		updDeleteTopicButtonState();
 	}
 }
