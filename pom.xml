@@ -5,7 +5,7 @@
 
 	<groupId>x.mvmn.kafkagui</groupId>
 	<artifactId>mvmn-kafkagui</artifactId>
-	<version>0.2.3</version>
+	<version>0.2.4</version>
 	<packaging>jar</packaging>
 
 	<properties>

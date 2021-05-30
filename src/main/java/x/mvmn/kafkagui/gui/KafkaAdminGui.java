@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -50,14 +51,19 @@ import javax.swing.ListSelectionModel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
+import javax.swing.event.TreeExpansionEvent;
+import javax.swing.event.TreeWillExpandListener;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.ExpandVetoException;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreeSelectionModel;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.ConsumerGroupDescription;
+import org.apache.kafka.clients.admin.ConsumerGroupListing;
 import org.apache.kafka.clients.admin.DescribeTopicsOptions;
 import org.apache.kafka.clients.admin.KafkaAdminClient;
 import org.apache.kafka.clients.admin.ListTopicsOptions;
@@ -65,6 +71,7 @@ import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
@@ -78,8 +85,9 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import groovy.util.Eval;
-import x.mvmn.kafkagui.gui.topictree.model.KafkaTopic;
-import x.mvmn.kafkagui.gui.topictree.model.KafkaTopicPartition;
+import x.mvmn.kafkagui.gui.model.ConsumerGroup;
+import x.mvmn.kafkagui.gui.model.KafkaTopic;
+import x.mvmn.kafkagui.gui.model.KafkaTopicPartition;
 import x.mvmn.kafkagui.gui.util.SwingUtil;
 import x.mvmn.kafkagui.lang.HexUtil;
 import x.mvmn.kafkagui.lang.StackTraceUtil;
@@ -88,11 +96,28 @@ import x.mvmn.kafkagui.lang.Tuple;
 public class KafkaAdminGui extends JFrame {
 	private static final long serialVersionUID = 3826007764248597964L;
 
-	protected final DefaultMutableTreeNode topicsRootNode = new DefaultMutableTreeNode("Topics", true);
-	protected final DefaultTreeModel treeModel = new DefaultTreeModel(topicsRootNode);
-	protected final JTree topicsTree = new JTree(treeModel);
+	protected final DefaultMutableTreeNode topicRootNode = new DefaultMutableTreeNode("Topics", true);
+	protected final DefaultTreeModel topicTreeModel = new DefaultTreeModel(topicRootNode);
+	protected final JTree topicTree = new JTree(topicTreeModel);
+
+	protected final DefaultMutableTreeNode consumerRootNode = new DefaultMutableTreeNode("Consumer groups", true);
+	protected final DefaultTreeModel consumerTreeModel = new DefaultTreeModel(consumerRootNode);
+	protected final JTree consumerTree = new JTree(consumerTreeModel);
+
+	protected final DefaultTableModel consumerTableModel = new DefaultTableModel() {
+		private static final long serialVersionUID = -495138720687143235L;
+
+		public boolean isCellEditable(int row, int column) {
+			return false;
+		}
+	};
+	protected final JTable consumerTable = new JTable(consumerTableModel);
+
 	protected final JButton btnCreateTopic = new JButton("Create");
 	protected final JButton btnDeleteTopic = new JButton("Delete");
+	protected final JButton btnRefreshTopics = new JButton("Refresh topics");
+	protected final JButton btnRefreshConsumers = new JButton("Refresh consumer groups");
+	protected final JButton btnFetchConsumerInfos = new JButton("Fetch information on consumers");
 	protected final JPanel contentPanel = new JPanel(new BorderLayout());
 	protected final DefaultTableModel msgTableModel = new DefaultTableModel(new String[] { "Partition", "Offset", "Key", "Content" }, 0) {
 		private static final long serialVersionUID = -4104977444040382766L;
@@ -188,33 +213,218 @@ public class KafkaAdminGui extends JFrame {
 			}
 		});
 
+		btnRefreshTopics.addActionListener(e -> {
+			btnRefreshTopics.setEnabled(false);
+			SwingUtil.performSafely(() -> {
+				try {
+					Collection<KafkaTopic> topics = kafkaAdminClient.listTopics(new ListTopicsOptions().listInternal(true))
+							.listings()
+							.get()
+							.stream()
+							.map(topic -> new KafkaTopic(topic.name(), topic.isInternal()))
+							.sorted()
+							.collect(Collectors.toList());
+
+					Map<String, TopicDescription> topicDescriptions = kafkaAdminClient
+							.describeTopics(topics.stream().map(KafkaTopic::getName).collect(Collectors.toSet()),
+									new DescribeTopicsOptions().includeAuthorizedOperations(true))
+							.all()
+							.get();
+
+					SwingUtilities.invokeLater(() -> {
+						topicRootNode.removeAllChildren();
+						for (KafkaTopic topic : topics) {
+							topicRootNode.add(createTopicNode(topic, topicDescriptions.get(topic.getName())));
+						}
+						topicTree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
+						topicTreeModel.nodeStructureChanged(topicRootNode);
+						topicTree.expandRow(0);
+					});
+				} finally {
+					SwingUtilities.invokeLater(() -> btnRefreshTopics.setEnabled(true));
+				}
+			});
+		});
+
+		btnRefreshConsumers.addActionListener(e -> {
+			btnRefreshConsumers.setEnabled(false);
+			SwingUtil.performSafely(() -> {
+				try {
+					List<ConsumerGroup> consumerGroups = kafkaAdminClient.listConsumerGroups()
+							.all()
+							.get()
+							.stream()
+							.map(cg -> new ConsumerGroup(cg.groupId(), !cg.isSimpleConsumerGroup()))
+							.collect(Collectors.toList());
+
+					SwingUtilities.invokeLater(() -> {
+						consumerRootNode.removeAllChildren();
+						for (ConsumerGroup consumerGroup : consumerGroups) {
+							DefaultMutableTreeNode node = new DefaultMutableTreeNode(consumerGroup, true);
+							node.add(new DefaultMutableTreeNode("Loading...", false));
+							consumerRootNode.add(node);
+						}
+						consumerTreeModel.nodeStructureChanged(consumerRootNode);
+						consumerTree.expandRow(0);
+					});
+				} finally {
+					SwingUtilities.invokeLater(() -> btnRefreshConsumers.setEnabled(true));
+				}
+			});
+		});
+
+		btnFetchConsumerInfos.addActionListener(e -> {
+			btnFetchConsumerInfos.setEnabled(false);
+			consumerTableModel.setRowCount(0);
+			SwingUtil.performSafely(() -> {
+				try {
+					Collection<ConsumerGroupListing> consumerGroups = kafkaAdminClient.listConsumerGroups().all().get();
+					Collection<ConsumerGroupDescription> consumerGroupDescriptionsCollection = kafkaAdminClient
+							.describeConsumerGroups(consumerGroups.stream().map(ConsumerGroupListing::groupId).collect(Collectors.toList()))
+							.all()
+							.get()
+							.values();
+					List<ConsumerGroupDescription> consumerGroupDescriptions = new ArrayList<>(consumerGroupDescriptionsCollection);
+					List<String[]> consumerInfos = consumerGroupDescriptions.stream()
+							.sorted(Comparator.comparing(ConsumerGroupDescription::groupId))
+							.flatMap(group -> group.members().size() > 0
+									? group.members()
+											.stream()
+											.map(member -> new String[] { group.groupId(), group.isSimpleConsumerGroup() ? "Yes" : "No",
+													group.state().toString(), group.coordinator().idString(),
+													group.coordinator().host() + ":" + group.coordinator().port() + " "
+															+ (group.coordinator().hasRack() ? group.coordinator().rack() : ""),
+													member.consumerId(), member.groupInstanceId().orElse(""), member.clientId(),
+													member.host(),
+													member.assignment()
+															.topicPartitions()
+															.stream()
+															.map(tp -> tp.topic() + "#" + tp.partition())
+															.collect(Collectors.joining(", ")) })
+									: Arrays.asList(
+											new String[][] { new String[] { group.groupId(), group.isSimpleConsumerGroup() ? "Yes" : "No",
+													group.state().toString(), group.coordinator().idString(),
+													group.coordinator().host() + ":" + group.coordinator().port() + " "
+															+ (group.coordinator().hasRack() ? group.coordinator().rack() : ""),
+													"", "", "", "", "" } })
+											.stream())
+							.collect(Collectors.toList());
+
+					SwingUtilities.invokeLater(() -> consumerInfos.forEach(row -> consumerTableModel.addRow(row)));
+				} finally {
+					SwingUtilities.invokeLater(() -> btnFetchConsumerInfos.setEnabled(true));
+				}
+			});
+		});
+
+		consumerTree.addTreeWillExpandListener(new TreeWillExpandListener() {
+			@Override
+			public void treeWillExpand(TreeExpansionEvent event) throws ExpandVetoException {
+				Object lastPathComponent = event.getPath().getLastPathComponent();
+				if (lastPathComponent instanceof DefaultMutableTreeNode) {
+					DefaultMutableTreeNode node = (DefaultMutableTreeNode) lastPathComponent;
+					if (node.getUserObject() instanceof ConsumerGroup) {
+						String consumerGroupId = ((ConsumerGroup) node.getUserObject()).getConsumerGroupId();
+						SwingUtil.performSafely(() -> {
+							Map<TopicPartition, OffsetAndMetadata> offsets = kafkaAdminClient.listConsumerGroupOffsets(consumerGroupId)
+									.partitionsToOffsetAndMetadata()
+									.get();
+							List<String> offsetsDescriptions = offsets.entrySet()
+									.stream()
+									.map(e -> e.getKey().topic() + " p." + e.getKey().partition() + " - offset " + e.getValue().offset()
+											+ (e.getValue().metadata().isEmpty() ? "" : "  (" + e.getValue().metadata() + ")"))
+									.collect(Collectors.toList());
+							SwingUtilities.invokeLater(() -> {
+								node.removeAllChildren();
+								offsetsDescriptions.forEach(v -> node.add(new DefaultMutableTreeNode(v, false)));
+								consumerTreeModel.nodeStructureChanged(node);
+							});
+						});
+					}
+				}
+			}
+
+			@Override
+			public void treeWillCollapse(TreeExpansionEvent event) throws ExpandVetoException {
+				Object lastPathComponent = event.getPath().getLastPathComponent();
+				if (lastPathComponent instanceof DefaultMutableTreeNode) {
+					DefaultMutableTreeNode node = (DefaultMutableTreeNode) lastPathComponent;
+					if (node.getUserObject() instanceof ConsumerGroup) {
+						node.removeAllChildren();
+						node.add(new DefaultMutableTreeNode("Loading...", false));
+					}
+				}
+			}
+		});
+
 		SwingUtil.performSafely(() -> {
 			AdminClient ac = KafkaAdminClient.create(clientConfig);
 			this.kafkaAdminClient = ac;
 			// Perform list topics as a test
-			Collection<KafkaTopic> topics = ac.listTopics(new ListTopicsOptions().listInternal(true)).listings().get().stream()
-					.map(topic -> new KafkaTopic(topic.name(), topic.isInternal())).sorted().collect(Collectors.toList());
+			Collection<KafkaTopic> topics = ac.listTopics(new ListTopicsOptions().listInternal(true))
+					.listings()
+					.get()
+					.stream()
+					.map(topic -> new KafkaTopic(topic.name(), topic.isInternal()))
+					.sorted()
+					.collect(Collectors.toList());
 
 			Map<String, TopicDescription> topicDescriptions = ac
 					.describeTopics(topics.stream().map(KafkaTopic::getName).collect(Collectors.toSet()),
 							new DescribeTopicsOptions().includeAuthorizedOperations(true))
-					.all().get();
+					.all()
+					.get();
 
-			topicsTree.getSelectionModel().addTreeSelectionListener(e -> onTopicsTreeSelectionChange());
+			List<ConsumerGroup> consumerGroups = ac.listConsumerGroups()
+					.all()
+					.get()
+					.stream()
+					.map(cg -> new ConsumerGroup(cg.groupId(), !cg.isSimpleConsumerGroup()))
+					.collect(Collectors.toList());
+
+			topicTree.getSelectionModel().addTreeSelectionListener(e -> onTopicsTreeSelectionChange());
 
 			SwingUtilities.invokeLater(() -> {
 				KafkaAdminGui.this.setVisible(false);
 				for (KafkaTopic topic : topics) {
-					topicsRootNode.add(createTopicNode(topic, topicDescriptions.get(topic.getName())));
+					topicRootNode.add(createTopicNode(topic, topicDescriptions.get(topic.getName())));
 				}
-				topicsTree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
-				topicsTree.expandRow(0);
+				topicTree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
+				topicTree.expandRow(0);
+
+				for (ConsumerGroup consumerGroup : consumerGroups) {
+					DefaultMutableTreeNode node = new DefaultMutableTreeNode(consumerGroup, true);
+					node.add(new DefaultMutableTreeNode("Loading...", false));
+					consumerRootNode.add(node);
+				}
+				consumerTree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
+				consumerTree.expandRow(0);
+
+				consumerTableModel.setColumnIdentifiers(new String[] { "Group ID", "Simple", "State", "Coordinator Node ID",
+						"Coordinator Node host:port rack", "Consumer ID", "Group Instance ID", "Client ID", "Host", "Assignments" });
+
 				KafkaAdminGui.this.remove(label);
-				JPanel topicsPanel = new JPanel(new BorderLayout());
-				topicsPanel.add(new JScrollPane(topicsTree), BorderLayout.CENTER);
-				topicsPanel.add(SwingUtil.twoComponentPanel(btnCreateTopic, btnDeleteTopic), BorderLayout.SOUTH);
-				JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, true, topicsPanel, contentPanel);
-				splitPane.setResizeWeight(0.2);
+				JPanel topicPanel = new JPanel(new BorderLayout());
+				topicPanel.add(btnRefreshTopics, BorderLayout.NORTH);
+				topicPanel.add(new JScrollPane(topicTree), BorderLayout.CENTER);
+				topicPanel.add(SwingUtil.twoComponentPanel(btnCreateTopic, btnDeleteTopic), BorderLayout.SOUTH);
+
+				JPanel consumerPanel = new JPanel(new BorderLayout());
+				consumerPanel.add(btnRefreshConsumers, BorderLayout.NORTH);
+				consumerPanel.add(new JScrollPane(consumerTree), BorderLayout.CENTER);
+
+				JSplitPane topicsSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, true, topicPanel, contentPanel);
+				topicsSplitPane.setResizeWeight(0.2);
+
+				JPanel pnlConsumerInfos = new JPanel(new BorderLayout());
+				pnlConsumerInfos.add(btnFetchConsumerInfos, BorderLayout.NORTH);
+				pnlConsumerInfos.add(new JScrollPane(consumerTable), BorderLayout.CENTER);
+				JSplitPane consumersSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, true, consumerPanel, pnlConsumerInfos);
+				topicsSplitPane.setResizeWeight(0.2);
+
+				JTabbedPane mainTabs = new JTabbedPane();
+				mainTabs.addTab("Topics", topicsSplitPane);
+				mainTabs.addTab("Consumers", consumersSplitPane);
 
 				msgViewEncoding.setSelectedItem(StandardCharsets.UTF_8.name());
 				GridBagConstraints gbc = new GridBagConstraints();
@@ -318,7 +528,7 @@ public class KafkaAdminGui extends JFrame {
 				contentPanel.add(msgSplitPane);
 
 				KafkaAdminGui.this.setLayout(new BorderLayout());
-				KafkaAdminGui.this.add(splitPane, BorderLayout.CENTER);
+				KafkaAdminGui.this.add(mainTabs, BorderLayout.CENTER);
 				KafkaAdminGui.this.pack();
 				SwingUtil.minPrefWidth(KafkaAdminGui.this, 800);
 				KafkaAdminGui.this.pack();
@@ -353,7 +563,9 @@ public class KafkaAdminGui extends JFrame {
 							if (partitionSelected) {
 								partitions = new HashSet<>(Arrays.asList(selectedPartition));
 							} else {
-								partitions = kafkaConsumer.partitionsFor(topicPartition.getA()).stream().map(PartitionInfo::partition)
+								partitions = kafkaConsumer.partitionsFor(topicPartition.getA())
+										.stream()
+										.map(PartitionInfo::partition)
 										.collect(Collectors.toSet());
 							}
 							Executor newThreadExecutor = command -> new Thread(command).start();
@@ -506,12 +718,14 @@ public class KafkaAdminGui extends JFrame {
 					new NewTopicDialog(KafkaAdminGui.this, params -> {
 						try {
 							kafkaAdminClient.createTopics(Arrays.asList(new NewTopic(params.getA(), params.getB(), params.getC())));
-							TopicDescription topicDescription = kafkaAdminClient.describeTopics(Arrays.asList(params.getA())).values()
-									.get(params.getA()).get();
+							TopicDescription topicDescription = kafkaAdminClient.describeTopics(Arrays.asList(params.getA()))
+									.values()
+									.get(params.getA())
+									.get();
 							SwingUtilities.invokeLater(() -> {
 								DefaultMutableTreeNode topicNode = createTopicNode(
 										KafkaTopic.builder().name(params.getA()).internal(false).build(), topicDescription);
-								treeModel.insertNodeInto(topicNode, topicsRootNode, topicsRootNode.getChildCount());
+								topicTreeModel.insertNodeInto(topicNode, topicRootNode, topicRootNode.getChildCount());
 								JOptionPane.showMessageDialog(KafkaAdminGui.this, "Topic " + params.getA() + " successfully created.");
 							});
 						} catch (Exception ex) {
@@ -534,14 +748,14 @@ public class KafkaAdminGui extends JFrame {
 										node = (DefaultMutableTreeNode) node.getParent();
 									}
 									if (node != null) {
-										treeModel.removeNodeFromParent(node);
+										topicTreeModel.removeNodeFromParent(node);
 									}
 								}
 							})).start();
 						}
 					});
 				});
-				
+
 				onTopicsTreeSelectionChange();
 
 				KafkaAdminGui.this.setVisible(true);
@@ -560,12 +774,15 @@ public class KafkaAdminGui extends JFrame {
 
 		if (topicDescription != null) {
 			if (topicDescription.partitions() != null) {
-				topicDescription.partitions().stream()
+				topicDescription.partitions()
+						.stream()
 						.map(p -> KafkaTopicPartition.builder().topic(topic.getName()).number(p.partition()).build())
 						.forEach(partition -> partitionsNode.add(new DefaultMutableTreeNode(partition, false)));
 			}
 			if (topicDescription.authorizedOperations() != null) {
-				topicDescription.authorizedOperations().stream().map(AclOperation::name)
+				topicDescription.authorizedOperations()
+						.stream()
+						.map(AclOperation::name)
 						.forEach(opName -> aclsNode.add(new DefaultMutableTreeNode(opName, false)));
 			}
 		}
@@ -641,20 +858,25 @@ public class KafkaAdminGui extends JFrame {
 	}
 
 	protected Tuple<String, Integer, DefaultMutableTreeNode, Void, Void> isTopicOrPartitionSelected() {
-		Object selectedObject = topicsTree.getLastSelectedPathComponent();
+		Object selectedObject = topicTree.getLastSelectedPathComponent();
 		while (selectedObject != null) {
 			if (selectedObject instanceof DefaultMutableTreeNode
 					&& ((DefaultMutableTreeNode) selectedObject).getUserObject() instanceof KafkaTopicPartition) {
 				KafkaTopicPartition partitionModel = (KafkaTopicPartition) ((DefaultMutableTreeNode) selectedObject).getUserObject();
 				String topic = partitionModel.getTopic();
 				Integer partition = partitionModel.getNumber();
-				return Tuple.<String, Integer, DefaultMutableTreeNode, Void, Void> builder().a(topic).b(partition)
-						.c((DefaultMutableTreeNode) selectedObject).build();
+				return Tuple.<String, Integer, DefaultMutableTreeNode, Void, Void> builder()
+						.a(topic)
+						.b(partition)
+						.c((DefaultMutableTreeNode) selectedObject)
+						.build();
 			} else if (selectedObject instanceof DefaultMutableTreeNode
 					&& ((DefaultMutableTreeNode) selectedObject).getUserObject() instanceof KafkaTopic) {
 				KafkaTopic topicModel = (KafkaTopic) ((DefaultMutableTreeNode) selectedObject).getUserObject();
-				return Tuple.<String, Integer, DefaultMutableTreeNode, Void, Void> builder().a(topicModel.getName())
-						.c((DefaultMutableTreeNode) selectedObject).build();
+				return Tuple.<String, Integer, DefaultMutableTreeNode, Void, Void> builder()
+						.a(topicModel.getName())
+						.c((DefaultMutableTreeNode) selectedObject)
+						.build();
 			} else if (selectedObject instanceof TreeNode) {
 				selectedObject = ((TreeNode) selectedObject).getParent();
 			}
@@ -678,7 +900,7 @@ public class KafkaAdminGui extends JFrame {
 	protected void updSendButtonState() {
 		btnPostMessage.setEnabled(topicOrPartitionSelected);
 	}
-	
+
 	protected void updDeleteTopicButtonState() {
 		btnDeleteTopic.setEnabled(topicOrPartitionSelected);
 	}

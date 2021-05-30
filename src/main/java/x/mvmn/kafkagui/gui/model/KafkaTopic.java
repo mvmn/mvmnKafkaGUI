@@ -1,4 +1,4 @@
-package x.mvmn.kafkagui.gui.topictree.model;
+package x.mvmn.kafkagui.gui.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
