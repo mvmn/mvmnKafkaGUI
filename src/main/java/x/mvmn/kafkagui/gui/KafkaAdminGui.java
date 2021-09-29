@@ -6,6 +6,7 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.GridLayout;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
@@ -18,17 +19,21 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.Spliterator;
+import java.util.Spliterators;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultComboBoxModel;
@@ -77,6 +82,9 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
+import org.apache.kafka.common.header.Header;
+import org.apache.kafka.common.header.Headers;
+import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -133,9 +141,20 @@ public class KafkaAdminGui extends JFrame {
 	protected final JTextField msgOffsetField = new JTextField();
 	protected final JTextField msgKeyField = new JTextField();
 	protected final JTextArea msgContent = new JTextArea();
+	protected final DefaultTableModel headersTableModel = new DefaultTableModel(new String[] { "Header key", "Header value" }, 0) {
+		private static final long serialVersionUID = -495138720687143235L;
+
+		public boolean isCellEditable(int row, int column) {
+			return false;
+		}
+	};
+	protected final JTable msgHeaders = new JTable(headersTableModel);
 	protected final JComboBox<String> msgViewEncoding = new JComboBox<>(
 			new DefaultComboBoxModel<>(Charset.availableCharsets().keySet().toArray(new String[0])));
 	protected final JCheckBox msgViewHex = new JCheckBox("Hex");
+	protected final JPanel pnlHeaders = new JPanel(new BorderLayout());
+	protected final JSplitPane msgContentHeadersSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, new JScrollPane(msgContent),
+			pnlHeaders);
 
 	protected final JComboBox<String> msgGetOption = new JComboBox<>(new String[] { "Latest", "Earliest" });
 	protected final JTextField msgGetCount = SwingUtil.numericOnlyTextField(10L, 0L, null, false);
@@ -459,7 +478,10 @@ public class KafkaAdminGui extends JFrame {
 				gbc.fill = GridBagConstraints.BOTH;
 				msgContent.setEditable(false);
 				JTabbedPane tabPane = new JTabbedPane();
-				tabPane.addTab("Message content", new JScrollPane(msgContent));
+				pnlHeaders.add(new JScrollPane(msgHeaders), BorderLayout.CENTER);
+				pnlHeaders.add(new JLabel("Message headers"), BorderLayout.NORTH);
+
+				tabPane.addTab("Message content", msgContentHeadersSplitPane);
 				tabPane.addTab("Groovy processor", new JScrollPane(txaGroovyTransform));
 				msgPanel.add(tabPane, gbc);
 
@@ -526,14 +548,6 @@ public class KafkaAdminGui extends JFrame {
 				JSplitPane msgSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, true, topicMessagesPanel, msgPanel);
 				msgSplitPane.setResizeWeight(0.5);
 				contentPanel.add(msgSplitPane);
-
-				KafkaAdminGui.this.setLayout(new BorderLayout());
-				KafkaAdminGui.this.add(mainTabs, BorderLayout.CENTER);
-				KafkaAdminGui.this.pack();
-				SwingUtil.minPrefWidth(KafkaAdminGui.this, 800);
-				KafkaAdminGui.this.pack();
-				SwingUtil.moveToScreenCenter(this);
-				msgSplitPane.setDividerLocation(0.5);
 
 				btnGetMessages.addActionListener(actEvt -> this.ifTopicOrPartitionSelected(topicPartition -> {
 					receiveInProgress = true;
@@ -640,7 +654,7 @@ public class KafkaAdminGui extends JFrame {
 					int idx = msgTable.getSelectedRow();
 					if (idx >= 0 && idx < currentResults.size()) {
 						ConsumerRecord<String, byte[]> record = currentResults.get(idx);
-						viewMsgContent(record.value());
+						viewMsgContent(record.value(), convertHeaders(record.headers()));
 					}
 				};
 				msgViewHex.addActionListener(alViewMessage);
@@ -661,7 +675,7 @@ public class KafkaAdminGui extends JFrame {
 						ConsumerRecord<String, byte[]> record = currentResults.get(idx);
 						msgOffsetField.setText(String.valueOf(record.offset()));
 						msgKeyField.setText(record.key());
-						viewMsgContent(record.value());
+						viewMsgContent(record.value(), convertHeaders(record.headers()));
 					}
 				});
 
@@ -683,8 +697,31 @@ public class KafkaAdminGui extends JFrame {
 					});
 					postMessageDialog.add(SwingUtil.twoComponentPanel(btnCancel, btnPost), BorderLayout.SOUTH);
 					postMessageDialog.add(tf, BorderLayout.NORTH);
-					postMessageDialog.add(new JScrollPane(txa), BorderLayout.CENTER);
+					DefaultTableModel headersTableModel = new DefaultTableModel(new String[] { "Header key", "Header value" }, 0);
+					JTable headersTable = new JTable(headersTableModel);
+					JPanel headersPanel = new JPanel(new BorderLayout());
+					headersPanel.add(new JScrollPane(headersTable), BorderLayout.CENTER);
+					JPanel headersBtnPanel = new JPanel(new GridLayout(1, 2));
+					JButton btnAddHeader = new JButton("Add header");
+					JButton btnDeleteHeader = new JButton("Delete headers");
+					headersBtnPanel.add(btnAddHeader);
+					headersBtnPanel.add(btnDeleteHeader);
+					btnAddHeader.addActionListener(actEvent -> headersTableModel.addRow(new String[] { "key", "value" }));
+					btnDeleteHeader.addActionListener(actEvent -> {
+						int[] selectedRows = headersTable.getSelectedRows();
+						int rowCount = headersTableModel.getRowCount();
+						for (int i = selectedRows.length - 1; i >= 0; i--) {
+							int rowNumber = selectedRows[i];
+							if (rowNumber < rowCount) {
+								headersTableModel.removeRow(rowNumber);
+							}
+						}
+					});
+					headersPanel.add(new JScrollPane(headersBtnPanel), BorderLayout.NORTH);
+					JSplitPane contentHeadersSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, new JScrollPane(txa), headersPanel);
+					postMessageDialog.add(contentHeadersSplitPane, BorderLayout.CENTER);
 					postMessageDialog.pack();
+					contentHeadersSplitPane.setDividerLocation(0.5);
 					SwingUtil.moveToScreenCenter(postMessageDialog);
 					postMessageDialog.setVisible(true);
 
@@ -693,13 +730,20 @@ public class KafkaAdminGui extends JFrame {
 						postMessageDialog.dispose();
 						String messageKey = tf.getText().isEmpty() ? null : tf.getText();
 						String messageContent = txa.getText();
+						List<Header> headers = new ArrayList<>();
+						for (int i = 0; i < headersTableModel.getRowCount(); i++) {
+							Object key = headersTableModel.getValueAt(i, 0);
+							Object value = headersTableModel.getValueAt(i, 1);
+							headers.add(new RecordHeader(key != null ? key.toString() : "",
+									(value != null ? value.toString() : "").getBytes(StandardCharsets.UTF_8)));
+						}
 						SwingUtil.performSafely(() -> {
 							clientConfig.setProperty("key.serializer", StringSerializer.class.getCanonicalName());
 							clientConfig.setProperty("value.serializer", ByteArraySerializer.class.getCanonicalName());
 							try (KafkaProducer<String, byte[]> producer = new KafkaProducer<String, byte[]>(clientConfig)) {
 								producer.send(
 										new ProducerRecord<String, byte[]>(topicPartition.getA(), topicPartition.getB(), messageKey,
-												messageContent.getBytes(StandardCharsets.UTF_8)),
+												messageContent.getBytes(StandardCharsets.UTF_8), headers),
 										(metadata, exception) -> SwingUtilities.invokeLater(() -> {
 											if (exception != null) {
 												SwingUtil.showError("Error while submitting message", exception);
@@ -758,9 +802,25 @@ public class KafkaAdminGui extends JFrame {
 
 				onTopicsTreeSelectionChange();
 
+				KafkaAdminGui.this.setLayout(new BorderLayout());
+				KafkaAdminGui.this.add(mainTabs, BorderLayout.CENTER);
+				KafkaAdminGui.this.pack();
+				SwingUtil.minPrefWidth(KafkaAdminGui.this, 800);
+				KafkaAdminGui.this.pack();
+				SwingUtil.moveToScreenCenter(KafkaAdminGui.this);
+				msgSplitPane.setDividerLocation(0.3);
+				msgContentHeadersSplitPane.setDividerLocation(0.5);
 				KafkaAdminGui.this.setVisible(true);
 			});
 		});
+	}
+
+	private List<Tuple<String, byte[], Void, Void, Void>> convertHeaders(Headers headers) {
+		return headers != null
+				? StreamSupport.stream(Spliterators.spliteratorUnknownSize(headers.iterator(), Spliterator.ORDERED), false)
+						.map(header -> Tuple.<String, byte[], Void, Void, Void> builder().a(header.key()).b(header.value()).build())
+						.collect(Collectors.toList())
+				: Collections.emptyList();
 	}
 
 	private DefaultMutableTreeNode createTopicNode(KafkaTopic topic, TopicDescription topicDescription) {
@@ -789,45 +849,56 @@ public class KafkaAdminGui extends JFrame {
 		return topicNode;
 	}
 
-	protected void viewMsgContent(byte[] messageContent) {
-		try {
-			if (msgViewHex.isSelected()) {
-				msgContent.setLineWrap(true);
-				msgContent.setWrapStyleWord(true);
-				msgContent.setFont(monospacedFont);
-				msgContent.setText(HexUtil.toHex(messageContent, " "));
+	protected void viewMsgContent(byte[] messageContent, List<Tuple<String, byte[], Void, Void, Void>> headers) {
+		headersTableModel.setRowCount(0);
+		if (msgViewHex.isSelected()) {
+			msgContent.setLineWrap(true);
+			msgContent.setWrapStyleWord(true);
+			msgContent.setFont(monospacedFont);
+			msgContent.setText(HexUtil.toHex(messageContent, " "));
+			headers.forEach(header -> headersTableModel.addRow(new String[] { header.getA(), HexUtil.toHex(header.getB(), " ") }));
+		} else {
+			msgContent.setFont(defaultFont);
+			msgContent.setLineWrap(false);
+			String charset = msgViewEncoding.getSelectedItem().toString();
+			String postProcessor = msgPostProcessor.getSelectedItem().toString();
+			if (postProcessor.equalsIgnoreCase("None")) {
+				msgContent.setText(safeToString(messageContent, charset, StandardCharsets.UTF_8));
 			} else {
-				msgContent.setFont(defaultFont);
-				msgContent.setLineWrap(false);
-				String charset = msgViewEncoding.getSelectedItem().toString();
-				String postProcessor = msgPostProcessor.getSelectedItem().toString();
-				if (postProcessor.equalsIgnoreCase("None")) {
-					msgContent.setText(new String(messageContent != null ? messageContent : new byte[0], charset));
-				} else {
-					msgContent.setText("Loading...");
-					SwingUtil.performSafely(() -> {
-						String errorText = null;
-						byte[] messageContentProcessed = messageContent;
-						try {
-							messageContentProcessed = processContent(postProcessor, messageContent);
-						} catch (Exception e) {
-							errorText = "Error occurred: " + StackTraceUtil.toString(e);
-						}
-						String messageText = new String(messageContentProcessed, charset);
-						String finalErrorText = errorText;
-						SwingUtilities.invokeLater(() -> {
-							msgContent.setText(messageText);
-							msgContent.setToolTipText(finalErrorText);
-							msgContent.setForeground(
-									finalErrorText != null ? Color.red : (Color) UIManager.getDefaults().get("TextArea.foreground"));
-						});
+				msgContent.setText("Loading...");
+				SwingUtil.performSafely(() -> {
+					String errorText = null;
+					byte[] messageContentProcessed = messageContent;
+					try {
+						messageContentProcessed = processContent(postProcessor, messageContent);
+					} catch (Exception e) {
+						errorText = "Error occurred: " + StackTraceUtil.toString(e);
+					}
+					String messageText = new String(messageContentProcessed, charset);
+					String finalErrorText = errorText;
+					SwingUtilities.invokeLater(() -> {
+						msgContent.setText(messageText);
+						msgContent.setToolTipText(finalErrorText);
+						msgContent.setForeground(
+								finalErrorText != null ? Color.red : (Color) UIManager.getDefaults().get("TextArea.foreground"));
 					});
-				}
+				});
 			}
-		} catch (UnsupportedEncodingException e1) {
-			// Should never happen because we choose an encoring from the list of supported encodings (charsets)
-			e1.printStackTrace();
+			headers.forEach(header -> headersTableModel
+					.addRow(new String[] { header.getA(), safeToString(header.getB(), charset, StandardCharsets.UTF_8) }));
 		}
+	}
+
+	private String safeToString(byte[] bytes, String charsetString, Charset fallbackCharset) {
+		String result = "";
+		if (bytes != null) {
+			try {
+				result = new String(bytes, charsetString);
+			} catch (UnsupportedEncodingException uee) {
+				result = new String(bytes, fallbackCharset);
+			}
+		}
+		return result;
 	}
 
 	protected byte[] processContent(String postProcessorName, byte[] content) {
