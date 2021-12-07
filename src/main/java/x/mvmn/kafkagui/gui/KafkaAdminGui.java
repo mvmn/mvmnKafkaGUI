@@ -56,9 +56,12 @@ import javax.swing.ListSelectionModel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.event.TreeExpansionEvent;
 import javax.swing.event.TreeWillExpandListener;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.text.DefaultCaret;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.ExpandVetoException;
@@ -153,8 +156,8 @@ public class KafkaAdminGui extends JFrame {
 			new DefaultComboBoxModel<>(Charset.availableCharsets().keySet().toArray(new String[0])));
 	protected final JCheckBox msgViewHex = new JCheckBox("Hex");
 	protected final JPanel pnlHeaders = new JPanel(new BorderLayout());
-	protected final JSplitPane msgContentHeadersSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, new JScrollPane(msgContent),
-			pnlHeaders);
+	// protected final JSplitPane msgContentHeadersSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, new JScrollPane(msgContent),
+	// pnlHeaders);
 
 	protected final JComboBox<String> msgGetOption = new JComboBox<>(new String[] { "Latest", "Earliest" });
 	protected final JTextField msgGetCount = SwingUtil.numericOnlyTextField(10L, 0L, null, false);
@@ -181,6 +184,9 @@ public class KafkaAdminGui extends JFrame {
 
 	protected volatile boolean receiveInProgress = false;
 	protected volatile boolean topicOrPartitionSelected = false;
+
+	protected final JTextField tfSearch = new JTextField();
+	protected final JCheckBox cbSearchCaseSensitive = new JCheckBox("Case-sensitive");
 
 	public KafkaAdminGui(String configName, Properties clientConfig, File appHomeFolder) {
 		super(configName + " - MVMn Kafka Client GUI");
@@ -473,15 +479,30 @@ public class KafkaAdminGui extends JFrame {
 				gbc.gridy = 2;
 				gbc.gridx = 0;
 				gbc.weightx = 1.0;
+				gbc.weighty = 0.0;
+				gbc.gridwidth = 1;
+				msgPanel.add(new JLabel("Search"), gbc);
+				gbc.gridx = 1;
+				msgPanel.add(tfSearch, gbc);
+				gbc.gridx = 2;
+				msgPanel.add(cbSearchCaseSensitive, gbc);
+				gbc.gridy = 3;
+				gbc.gridx = 0;
+				gbc.weightx = 1.0;
 				gbc.weighty = 1.0;
 				gbc.gridwidth = 3;
 				gbc.fill = GridBagConstraints.BOTH;
 				msgContent.setEditable(false);
+				DefaultCaret caret = (DefaultCaret) msgContent.getCaret();
+				caret.setUpdatePolicy(DefaultCaret.NEVER_UPDATE);
 				JTabbedPane tabPane = new JTabbedPane();
-				pnlHeaders.add(new JScrollPane(msgHeaders), BorderLayout.CENTER);
-				pnlHeaders.add(new JLabel("Message headers"), BorderLayout.NORTH);
+				// pnlHeaders.add(new JScrollPane(msgHeaders), BorderLayout.CENTER);
+				// pnlHeaders.add(new JLabel("Message headers"), BorderLayout.NORTH);
 
-				tabPane.addTab("Message content", msgContentHeadersSplitPane);
+				// tabPane.addTab("Message content", msgContentHeadersSplitPane);
+
+				tabPane.addTab("Message content", new JScrollPane(msgContent));
+				tabPane.addTab("Message headers", new JScrollPane(msgHeaders));
 				tabPane.addTab("Groovy processor", new JScrollPane(txaGroovyTransform));
 				msgPanel.add(tabPane, gbc);
 
@@ -800,6 +821,25 @@ public class KafkaAdminGui extends JFrame {
 					});
 				});
 
+				tfSearch.getDocument().addDocumentListener(new DocumentListener() {
+
+					@Override
+					public void removeUpdate(DocumentEvent e) {
+						applySearch();
+					}
+
+					@Override
+					public void insertUpdate(DocumentEvent e) {
+						applySearch();
+					}
+
+					@Override
+					public void changedUpdate(DocumentEvent e) {
+						applySearch();
+					}
+				});
+				cbSearchCaseSensitive.addChangeListener(e -> applySearch());
+
 				onTopicsTreeSelectionChange();
 
 				KafkaAdminGui.this.setLayout(new BorderLayout());
@@ -809,10 +849,14 @@ public class KafkaAdminGui extends JFrame {
 				KafkaAdminGui.this.pack();
 				SwingUtil.moveToScreenCenter(KafkaAdminGui.this);
 				msgSplitPane.setDividerLocation(0.3);
-				msgContentHeadersSplitPane.setDividerLocation(0.5);
+				// msgContentHeadersSplitPane.setDividerLocation(0.5);
 				KafkaAdminGui.this.setVisible(true);
 			});
 		});
+	}
+
+	private void applySearch() {
+		SwingUtil.applySearchHighlight(msgContent, tfSearch.getText(), cbSearchCaseSensitive.isSelected(), msgContent.getSelectionColor());
 	}
 
 	private List<Tuple<String, byte[], Void, Void, Void>> convertHeaders(Headers headers) {
@@ -857,6 +901,7 @@ public class KafkaAdminGui extends JFrame {
 			msgContent.setFont(monospacedFont);
 			msgContent.setText(HexUtil.toHex(messageContent, " "));
 			headers.forEach(header -> headersTableModel.addRow(new String[] { header.getA(), HexUtil.toHex(header.getB(), " ") }));
+			applySearch();
 		} else {
 			msgContent.setFont(defaultFont);
 			msgContent.setLineWrap(false);
@@ -881,6 +926,7 @@ public class KafkaAdminGui extends JFrame {
 						msgContent.setToolTipText(finalErrorText);
 						msgContent.setForeground(
 								finalErrorText != null ? Color.red : (Color) UIManager.getDefaults().get("TextArea.foreground"));
+						applySearch();
 					});
 				});
 			}

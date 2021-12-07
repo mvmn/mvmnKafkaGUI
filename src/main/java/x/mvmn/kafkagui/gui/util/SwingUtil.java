@@ -1,5 +1,6 @@
 package x.mvmn.kafkagui.gui.util;
 
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Frame;
@@ -11,11 +12,15 @@ import java.util.Arrays;
 
 import javax.swing.JFormattedTextField;
 import javax.swing.JPanel;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.LookAndFeel;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.UIManager.LookAndFeelInfo;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.DefaultHighlighter;
+import javax.swing.text.DefaultHighlighter.DefaultHighlightPainter;
 import javax.swing.text.NumberFormatter;
 
 import x.mvmn.kafkagui.lang.StackTraceUtil;
@@ -106,7 +111,9 @@ public class SwingUtil {
 
 	public static String getLookAndFeelName(LookAndFeel lnf) {
 		return Arrays.stream(UIManager.getInstalledLookAndFeels())
-				.filter(lnfInfo -> lnfInfo.getClassName().equals(lnf.getClass().getCanonicalName())).map(LookAndFeelInfo::getName).findAny()
+				.filter(lnfInfo -> lnfInfo.getClassName().equals(lnf.getClass().getCanonicalName()))
+				.map(LookAndFeelInfo::getName)
+				.findAny()
 				.orElse(null);
 	}
 
@@ -124,7 +131,9 @@ public class SwingUtil {
 	}
 
 	public static void setLookAndFeel(String lookAndFeelName) {
-		Arrays.stream(UIManager.getInstalledLookAndFeels()).filter(lnf -> lnf.getName().equals(lookAndFeelName)).findAny()
+		Arrays.stream(UIManager.getInstalledLookAndFeels())
+				.filter(lnf -> lnf.getName().equals(lookAndFeelName))
+				.findAny()
 				.ifPresent(lnf -> {
 					try {
 						if (!UIManager.getLookAndFeel().getName().equals(lnf.getName())) {
@@ -135,5 +144,36 @@ public class SwingUtil {
 						showError("Error setting look&feel to " + lookAndFeelName, error);
 					}
 				});
+	}
+
+	public static void applySearchHighlight(JTextArea txa, String searchText, boolean caseSensitive, Color highlightColor) {
+		txa.getHighlighter().removeAllHighlights();
+		if (searchText.length() > 0) {
+			String text = txa.getText();
+			if (!caseSensitive) {
+				text = text.toLowerCase();
+				searchText = searchText.toLowerCase();
+			}
+			DefaultHighlightPainter highlighter = new DefaultHighlighter.DefaultHighlightPainter(highlightColor);
+			boolean first = true;
+			int pos = text.indexOf(searchText);
+			while (pos >= 0) {
+				int endPos = pos + searchText.length();
+				try {
+					txa.getHighlighter().addHighlight(pos, endPos, highlighter);
+				} catch (BadLocationException e) {
+					// Ignore
+				}
+				if (first) {
+					first = false;
+					try {
+						txa.scrollRectToVisible(txa.modelToView(pos));
+					} catch (BadLocationException e) {
+						// Ignore
+					}
+				}
+				pos = text.indexOf(searchText, endPos);
+			}
+		}
 	}
 }
